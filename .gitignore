@@ -1,0 +1,14 @@
+
+Tests-misceláneos/
+
+*.s19
+
+*.lst
+
+*.log
+
+*.pdf
+
+Practicas/practica_clase1\.asm
+
+*.properties
