@@ -5,7 +5,7 @@
 		;FECHA: 28 DE SEPTIEMBRE, 2018
 		;AUTOR: EMMANUEL BUSTOS TORRES 
 		
-;Descripción: Este programa consiste en un programa que ordena de mayor a 
+;Descripción: Este programa consiste en ordenaR de mayor a 
 ;menor una lista de números, eliminando los elementos repetidos;
 						ORG $1000
 CANT:	  		Dw 31
