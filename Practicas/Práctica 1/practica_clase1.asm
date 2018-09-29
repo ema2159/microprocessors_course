@@ -1,0 +1,85 @@
+							;ESTRUCTURAS DE DATOS
+							ORG $1000
+VALORI:				EQU 50
+VALORM:				EQU 50
+VALORE:				EQU 50
+CUENTA:				DB 50
+LOW:					DS 1
+CONT_BIN:			DS 1
+BCD_H					DS 1
+BCD_L
+VALOR_INT:		DS 1
+VALOR_MED:		DS 1
+VALOR_EXT:		DS 1
+LAZO_INT:			DS 1
+LAZO_MED:			DS 1
+LAZO_EXT:			DS 1
+BANDERAS:			DS 1
+							;PROGRAMA PRIRNCIPAL
+							ORG $2000
+							CLR CONT_BIN
+							BSET BANDERAS,$01		;HACE INCRE <--0
+VUELVA:				BCLR BANDERAS,$01,DECRE
+							INC CONT_BIN
+							LDAA CONT_BIN
+							CMPA CUENTA
+							BNE APILE
+							BCLR BANDERAS,$01			;INCRE <-- 0
+							BRA APILE
+DECRE:				DEC CONT_BIN
+							TST CONT_BIN
+							BNE APILE
+							BSET BANDERAS,$01
+APILE:				LDAA CONT_BIN
+							PSHA
+							JSR BIN_BCD
+							MOVB #VALORI, VALOR_INT
+							MOVB #VALORM, VALOR_MED
+							MOVB #VALORE, VALOR_EXT
+							
+BIN_BCD:			PULX
+							PULA
+							LDAB #7
+							CLR BCD_H
+							CLR BCD_L
+							
+SEGUIR:				
+							ROL BCD_L
+							ROL BCD_H
+							PSHA
+							LDAA BCD_L
+							ANDA #$0F
+							CMPA #5
+							BNE PARTEALTA
+PARTEALTA:		STAA LOW
+							LDAA BCD_L
+							ANDA #$F0
+							CMPA #$50
+							BLT SUMAR
+							ADDA #$30
+SUMAR:				ADDA LOW
+							STAA BCD_L
+							PULA
+							DBNE B,SEGUIR
+							ADDA #3
+							RTS
+
+
+
+DELAY:				MOVB VALOR_EXT,LAZO_EXT
+MEDIO:				MOVB VALOR_MED,LAZO_MED
+INTERNO:			MOVB VALOR_INT,LAZO_INT
+							
+LAZO:					NOP
+							NOP
+							NOP
+							NOP
+							DEC
+							BNE INTERNO
+							
+							DEC LAZO_INT
+							BNE INTERNO
+							
+							DEC LAZO_INT
+							BNE INTERNO
+							RTS
