@@ -5,11 +5,11 @@
 		;FECHA: 28 DE SEPTIEMBRE, 2018
 		;AUTOR: EMMANUEL BUSTOS TORRES 
 		
-;Descripción: Este programa consiste en ordenaR de mayor a 
+;Descripción: Este programa consiste en ordenar de mayor a 
 ;menor una lista de números, eliminando los elementos repetidos;
 						ORG $1000
 CANT:	  		Dw 31
-ARRAYEND:		DW 0 ;Se guarda la última posición de memoria
+ARRAYEND:		DS 2     ;Se guarda la última posición de memoria
 DATOS: 		  DW $1100
 ORDEN:  	  DW $1120
 						ORG $1100
@@ -17,7 +17,7 @@ ORDEN:  	  DW $1120
 						ORG	$1500
 						;Primero se implementa un bubblesort sobre los CANT datos guardados en la posición DATOS en el índice X como posición inicial, utilizándolo como pivote
 						LDD CANT		
-						ADDD DATOS ;Se guarda en tiempo de ejecución la posición final del arreglo de datos, además, almacena de una vez (CANT)-1 en B, útil para recorrer el arreglo
+						ADDD DATOS ;Se guarda en tiempo de ejecución la posición del penúltimo elemento del arreglo de datos, además, almacena de una vez (CANT)-1 en B, útil para recorrer el arreglo
 						SUBD #1
 						STD ARRAYEND
 LOOP1:			LDY DATOS			
@@ -35,7 +35,7 @@ NO_SWAP:		CPY ARRAYEND	;Verificar si el índice Y alcanzó el penúltimo element
 						LDX ORDEN
 LOOP3:			LDAA 1,Y+						
 						CMPA -1,X
-						BEQ NOT_STORE 
+						BEQ NOT_STORE 		;Si hay un elemento repetido, este no se guarda
 						STAA 1,X+
 NOT_STORE:	DBNE B, LOOP3	
 						BRA *
