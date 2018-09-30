@@ -1,6 +1,16 @@
 ;***********************************************************************
 
 															;Tarea 3
+		;FECHA: 28 DE SEPTIEMBRE, 2018
+		;AUTOR: EMMANUEL BUSTOS TORRES 
+		;CARNÉ: B51296
+;Descripción: Este programa recibe dos tablas, una conteniendo datos en
+;forma de números y la otra conteniendo los posibles valores con raíz
+;cuadrada entera que puede tener la primera tabla. El programa recibe
+;un parámetro desde el teclado mediante el cual se indica la cantidad
+;de valores con raíz cuadrada entera se quieren encontrar en el arreglo, 
+;los busca en la tabla de datos, contando cuantos logra encontrar,
+;y guardándolos en un arreglo, para posteriormente imprimirlos
 
 ;***********************************************************************
 CR  				EQU $0D
@@ -55,28 +65,9 @@ INICIO:			LDS #$3BFF
 						STD  DATOS_FIN			;Calcular y guardar la última posición de DATOS
 						JSR LEER_CANT
 						JSR	BUSCAR
-						CLRA
-						LDAB CONT
-						PSHD
-						LDD #PRINT_CONT
-						LDX 0
-						JSR [PRINTF,X] 
-						LDD #PRINT_ENT
-						LDX 0
-						JSR [PRINTF,X] 
-						MOVW #ENTERO,ENT_POINT		
-PRINTFINAL: CLRA
-						LDY ENT_POINT     ;Siempre se conserva END_POINT y no se usa solo Y porque la subrutina de print destruye todos los índices y acumuladores
-						LDAB 0,Y
-						PSHD
-						LDD #ENT_NUM
-						LDX 0
-						JSR [PRINTF,X]
-						INC ENT_POINT+1
-						DEC CONT 
-						TST CONT
-						BNE PRINTFINAL
+						JSR PRNTENTERO
 						BRA INICIO
+						
 						
 ;Subrutina recbe un número entre 1 y 9 desde la terminal. Arroja un error mientras se le ingrese algo distinto
 LEER_CANT:	LDX #0
@@ -91,7 +82,7 @@ LEER_CANT:	LDX #0
 						ANDB #$0F
 						STAB CANT
 						ORAB #$30
-						JSR [PUTCHAR,X] ;Imprime caracter en la terminal
+			   		JSR [PUTCHAR,X] ;Imprime caracter en la terminal
 						RTS
 GOTOERR1:		JSR PRINT_ERR1	;Si el caracter no es un valor del 0 al 9, imprimir un mensaje de error
 						BRA LEER_CANT
@@ -103,23 +94,23 @@ PRINT_ERR1:	LDX #0
 						RTS
 						
 ;Subrutina que busca números DATOS en CUAD
-BUSCAR:			LDX #DATOS
-SEARCH:			LDAA LONG_CUAD
-						LDY #CUAD
-						LDAB 1,X+
-CUAD_COMP:	CMPB 1,Y+
-						BNE	 NOT_SQRT
-						INC CONT
-						STX SAVEX
-						JSR RAIZ
-						LDX SAVEX
-						DEC CANT
-						BEQ	ALL_FOUND
-						BRA CHECKX
-NOT_SQRT:		DBNE A,CUAD_COMP
-CHECKX			CPX	DATOS_FIN	
-						BNE	SEARCH
-ALL_FOUND:	RTS
+BUSCAR:			LDX #DATOS			;Se deja apuntando a X a DATOS
+SEARCH:			LDAA LONG_CUAD	;Se carga en A la cantidad de elementos en CUAD
+						LDY #CUAD				;Se deja apuntando Y a CUAD
+						LDAB 1,X+				;Se carga un dato y se incrementa X
+CUAD_COMP:	CMPB 1,Y+				;Se compara el dato con uno de los valores de CUAD y se incrementa Y
+						BNE	 NOT_SQRT   ;Si no son iguales, seguir, si sí, se encontró un dato con raiz entera
+						INC CONT				
+						STX SAVEX				;Respaldar puntero X
+						JSR RAIZ				;Saltar a sub rutina de cálculo de raíz
+						LDX SAVEX				;Recuperar puntero X
+						DEC CANT				;Decrementar la cantidad de números por encontrar
+						BEQ	ALL_FOUND		;Si ya se encontraron todos proseguir
+						BRA CHECKX			
+NOT_SQRT:		DBNE A,CUAD_COMP ;Seguir a comparar con el siguiente valor en CUAD
+CHECKX			CPX	DATOS_FIN		 ;Se verifica si ya se buscó en todo el arreglo de datos
+						BNE	SEARCH			 ;Si no, continuar con el siguiente dato	
+ALL_FOUND:	RTS							 ;Si  sí, retornar
 
 ;Subrutina que calcula la raíz cuadrada de un número mediante el algoritmo babilónico
 RAIZ:				STD SAVED    ;Conservar el valor de D que será necesitado después
@@ -141,5 +132,31 @@ SQRT_LOOP:	MOVW RVAR,TVAR ;Implementación de algoritmo babilónico usando varia
 						INC ENT_POINT+1 ;Se incrementa ENT_POINT (El +1 se debe a que ENT_POINT es un word, y se quiere incrementar el byte menos significativo de dicha dirección)
 						LDD	SAVED
 						RTS
-						
-						
+					
+					
+;Subrutina Print entero
+PRNTENTERO:	CLRA
+						LDAB CONT ;Se guarda CONT en el stack para paswarlo como parámetro al print
+						PSHD
+						LDD #PRINT_CONT ;Se guarda el mensaje en D
+						LDX 0
+						JSR [PRINTF,X] ;Se imprime la cantidad de números encontrados
+						LEAS 2,SP
+						LDD #PRINT_ENT	
+						LDX 0
+						JSR [PRINTF,X] ;Se imprime "ENTERO: "
+						MOVW #ENTERO,ENT_POINT	;Se deja al puntero ENT_POINT apuntando al inicio del arreglo entero
+PRINTFINAL: CLRA
+						LDY ENT_POINT     ;Siempre se conserva END_POINT y no se usa solo Y porque la subrutina de print destruye todos los índices y acumuladores
+						LDAB 0,Y
+						PSHD							;Se pasa como parámetro el número a imprimir
+						LDD #ENT_NUM
+						LDX 0
+						JSR [PRINTF,X]		;Se imprime el número deseado
+						LEAS 2,SP
+						INC ENT_POINT+1		;Se incrementa el puntero que recorre al arreglo entero
+						DEC CONT 					;Se decrementa cont
+						TST CONT					;Si CONT es cero, ya se imprimieron todos los números. Regresar
+						BNE PRINTFINAL		;sino, imprimir siguiente número
+						RTS
+			
