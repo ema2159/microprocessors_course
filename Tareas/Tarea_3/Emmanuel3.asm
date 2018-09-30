@@ -10,7 +10,7 @@ GETCHAR 		EQU $EE84
 PUTCHAR		 	EQU $EE86
 PRINTF  		EQU $EE88
 						ORG $1000
-LONG				DB 10
+LONG				DB 13
 CANT:				DS 1
 CONT:				DB 0
 DATOS_FIN:	DS 2
@@ -23,19 +23,22 @@ RVAR:				DS 2
 TVAR:				DS 2
 ENT_POINT:	DS 2
 						ORG $1020
-DATOS:			DB 4,9,18,4,27,63,12,32,36,15
+DATOS:			DB 4,9,18,4,27,63,12,32,36,15,100,169,225
 						ORG $1050
 CUAD:				DB 1,4,9,16,25,36,49,64,81,100,121,144,169,196,225
 						ORG $1100
 ENTERO:			DS 1
 						ORG $1200			;Aquí se guardan los mensajes a imprimir y demás
-INGRESE:		DB CR,LF
+INGRESE:		DB CR,LF,LF
 						FCC "INGRESE EL VALOR DE CANT (ENTRE 1 Y 9): "
 						DB FIN
-ERROR1:			DB CR,LF
+ERROR1:			DB CR,LF,LF
 						FCC "ERROR 1: El número ingresado debe ser un número mayor o igual a 1 y menor igual a 9"
-						DB LF,LF,FIN
-PRINT_ENT:	DB CR,LF
+						DB FIN
+PRINT_CONT:	DB CR,LF,LF
+						FCC "CANTIDAD DE VALORES ENCONTRADOS: %d"
+						DB FIN
+PRINT_ENT:	DB CR,LF,LF
 						FCC "ENTERO:"
 						DB FIN
 ENT_NUM:		FCC " %d"
@@ -45,13 +48,19 @@ ENT_NUM:		FCC " %d"
 ;************************************************************************
 						ORG $1500
 ;Programa principal:
-						LDS #$3BFF
+INICIO:			LDS #$3BFF
 						LDD #DATOS 
 						MOVW #ENTERO,ENT_POINT
 						ADDB LONG						;Calcular y guardar la última posición de DATOS
 						STD  DATOS_FIN			;Calcular y guardar la última posición de DATOS
 						JSR LEER_CANT
 						JSR	BUSCAR
+						CLRA
+						LDAB CONT
+						PSHD
+						LDD #PRINT_CONT
+						LDX 0
+						JSR [PRINTF,X] 
 						LDD #PRINT_ENT
 						LDX 0
 						JSR [PRINTF,X] 
@@ -63,12 +72,11 @@ PRINTFINAL: CLRA
 						LDD #ENT_NUM
 						LDX 0
 						JSR [PRINTF,X]
-						PULD
 						INC ENT_POINT+1
 						DEC CONT 
 						TST CONT
 						BNE PRINTFINAL
-						BRA *
+						BRA INICIO
 						
 ;Subrutina recbe un número entre 1 y 9 desde la terminal. Arroja un error mientras se le ingrese algo distinto
 LEER_CANT:	LDX #0
@@ -85,7 +93,7 @@ LEER_CANT:	LDX #0
 						ORAB #$30
 						JSR [PUTCHAR,X] ;Imprime caracter en la terminal
 						RTS
-GOTOERR1:		JSR PRINT_ERR1	;Si el caracter no es un valor del0 al 9, imprimir un mensaje de error
+GOTOERR1:		JSR PRINT_ERR1	;Si el caracter no es un valor del 0 al 9, imprimir un mensaje de error
 						BRA LEER_CANT
 						
 ;Subrutina que imprime un mensaje de error
