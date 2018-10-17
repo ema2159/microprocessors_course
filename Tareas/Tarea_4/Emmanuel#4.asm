@@ -26,22 +26,52 @@ TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$0E
 ;Configuración de registros
 ;******************************
 					ORG $1500
+					;Configurar interrupción RTI
 					MOVB #$31,RTICTL
 					BSET CRGINT,$80
+					;Configurar LEDS
+					MOVB DDRB,$FF
+					BSET DDRJ,$02
+					BCLR PTJ,$02
+					;Configurar la mitad de los bits de teclado como entrada y la otra mitad como salida
+					MOVB DDRA,$0F
+					;Habilitar instrucciones mascarables
 					CLI
+					;Configurar stack
 					LDS #$3BFF
-					MOVB #$01,LEDS
-					MOVB #100,CONT_INT
 					BRA *
-
 
 RTI_ISR:	TST REB
 					BEQ DEC_REB
 					MOVB	#$FF,BUFFER
-					MOVB PORTA,BUFFER
-					LDAA TECLA
+;*********LEER TECLA***************
+					MOVB #0,PATRON
+					LDAA #EF
+					LDX TECLAS
+LOOP_TEC:	LDAB PATRON
+					CMPB #4
+					BEQ FIN_LEER
+					STAA PORTA
+					LDAB #0
+					BRCLR PORTA,$01,ENC_TEC
+					INCB
+					BRCLR PORTA,$02,ENC_TEC
+					INCB
+					BRCLR PORTA,$04,ENC_TEC
+					INCB
+					BRCLR PORTA,$08,ENC_TEC
+					INC PATRON
+					ROLA
+					BRA	LOOP_TEC
+ENC_TEC:	LSL PATRON
+					LSL PATRON
+					ADDB PATRON
+					MOVB B,X BUFFER
+FIN_LEER:
+;**********************************					
+					LDAA #FF
 					CMPA BUFFER
-					BNE TEC_NE
+					BEQ TEC_NE
 					TST PRIMERA
 					BNE TEC_NE
 					BSET BANDERAS,$04
@@ -70,6 +100,15 @@ RTI_RTRN:	RTI
 
 
 
+
+
+
+
+
+
+
+					
+					
 
 
 
