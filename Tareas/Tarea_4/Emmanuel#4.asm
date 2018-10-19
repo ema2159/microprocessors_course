@@ -7,18 +7,16 @@
 ;                 -----------------                                                     
 ;                 |   |   |   |   |                                                     
 ;                 | 1 | 2 | 3 | 4 |                                                     
-;            PA4--------------------                                           
+;       PA4($EF)--------------------                                           
 ;                 |   |   |   |   |                                           
 ;                 | 5 | 6 | 7 | 8 |                                           
-;            PA5--------------------                                           
+;       PA5($DF)--------------------                                           
 ;                 |   |   |   |   |                                           
 ;                 | B | 9 | 0 | E |                                           
-;            PA6--------------------                                           
-;                 |   |   |   |   |                                                   
-;                 | NA| NA| NA| NA|                                                   
-;            PA7-------------------- 
+;       PA6($7F)--------------------                                           
 ;                     |   |   |   |
 ;                    PA0 PA1 PA2 PA3
+;             BRCLR: $01 $02 $04 $08
 ;***********************************************************************
 #include registers.inc
 					ORG $3E70
@@ -36,7 +34,7 @@ BUFFER:		DS 1
 TMP1:			DS 1
 TMP2:			DS 1
 TMP3:			DS 1
-TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$0E
+TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$00,$0E
 ;******************************
 ;Configuración de registros
 ;******************************
@@ -52,7 +50,7 @@ TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$0E
 					;Configurar la mitad de los bits de teclado como entrada y la otra mitad como salida
 					MOVB #$F0,DDRA
 					;Habilitar resistencias de pullup
-				;	BSET PUCR,$01
+					;BSET PUCR,$01
 					;Habilitar instrucciones mascarables
 					CLI
 					;Configurar stack
@@ -60,27 +58,24 @@ TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$0E
 					BRA *
 
 RTI_ISR:	TST REB
+					MOVB TECLA,PORTB
 					LBEQ DEC_REB
 					MOVB	#$FF,BUFFER
 ;*********LEER TECLA***************
 					MOVB #0,PATRON
 					LDAA #$EF
-					LDX TECLAS
+					LDX #TECLAS
 LOOP_TEC:	LDAB PATRON
-					CMPB #4
+					CMPB #3
 					BEQ FIN_LEER
 					STAA PORTA
 					LDAB #0
-					MOVB PORTA,PORTB
 					BRCLR PORTA,$01,ENC_TEC
 					INCB
-					MOVB PORTA,PORTB
 					BRCLR PORTA,$02,ENC_TEC
 					INCB
-					MOVB PORTA,PORTB
 					BRCLR PORTA,$04,ENC_TEC
 					INCB
-					MOVB PORTA,PORTB
 					BRCLR PORTA,$08,ENC_TEC
 					INC PATRON
 					ROLA
@@ -89,7 +84,6 @@ ENC_TEC:	LSL PATRON
 					LSL PATRON
 					ADDB PATRON
 					MOVB B,X BUFFER
-				;	MOVB BUFFER,PORTB
 FIN_LEER:
 ;**********************************					
 					LDAA #$FF
