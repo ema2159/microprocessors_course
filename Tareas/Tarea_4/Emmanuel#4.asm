@@ -50,16 +50,19 @@ TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$00,$0E
 					;Configurar la mitad de los bits de teclado como entrada y la otra mitad como salida
 					MOVB #$F0,DDRA
 					;Habilitar resistencias de pullup
-					;BSET PUCR,$01
+					BSET PUCR,$01
 					;Habilitar instrucciones mascarables
 					CLI
 					;Configurar stack
 					LDS #$3BFF
+					;Inicializar distintas variables
+					MOVB #10,REB
+					MOVB #$00,BANDERAS
 					BRA *
 
 RTI_ISR:	TST REB
-					MOVB TECLA,PORTB
-					LBEQ DEC_REB
+					LBNE DEC_REB
+					;MOVB TECLA,PORTB
 					MOVB	#$FF,BUFFER
 ;*********LEER TECLA***************
 					MOVB #0,PATRON
@@ -84,22 +87,24 @@ ENC_TEC:	LSL PATRON
 					LSL PATRON
 					ADDB PATRON
 					MOVB B,X BUFFER
-FIN_LEER:
+FIN_LEER: 
 ;**********************************					
 					LDAA #$FF
 					CMPA BUFFER
 					BEQ TEC_NE
-					BRSET BANDERAS,$03,TEC_NE
+					BRSET BANDERAS,$04,TEC_NE
 					BSET BANDERAS,$04
 					MOVB #10,REB
 					MOVB BUFFER,TECLA
 					BRA RTI_RTRN
-TEC_NE:		CMPA #$FF
+TEC_NE:		LDAA TECLA 
+					CMPA #$FF
 					BEQ RTI_RTRN
 					BRSET BANDERAS,$02,IS_VALID
 					CMPA BUFFER
 					BEQ	TEC_BUFF
 					MOVB #$FF,TECLA
+					BCLR BANDERAS,$04
 					BRA RTI_RTRN
 TEC_BUFF:	BSET BANDERAS,$02
 					BRA RTI_RTRN
@@ -108,23 +113,12 @@ IS_VALID: LDAB BUFFER
 					BNE	RTI_RTRN
 					BSET BANDERAS,$01
 					BCLR BANDERAS,$06
+					MOVB TECLA,PORTB
+					BCLR BANDERAS,$01
 					BRA RTI_RTRN
 DEC_REB:	DEC REB
-RTI_RTRN:	RTI
-
-
-
-
-
-
-
-
-
-
-
-
-					
-					
+RTI_RTRN:	BSET CRGFLG,$80
+					RTI
 
 
 
