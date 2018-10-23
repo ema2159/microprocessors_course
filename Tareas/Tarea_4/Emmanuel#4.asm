@@ -2,6 +2,7 @@
 ;                             Tarea 4
 ;Autor: Emmanuel Bustos T.
 ;Versión: 1.0
+;Fecha: 20 de Octubre, 2018
 ;Descripción: Este programa consiste  en leer e interpretar las entradas 
 ;brindadas en la tarjeta de training Dragon 12 por el teclado matricial, 
 ;implementando diversos tipos de  subrutinas. El programa lee las entra-
@@ -78,12 +79,62 @@ LOOP_FIN:	BRCLR BANDERAS,$01,NOT_TEC
 		JSR LEDS
 NOT_TEC:	BRA LOOP_FIN
 
+;************SUBRUTINA TECLADO*************
+TECLADO:	LDAA TECLA
+		LDAB TMP1
+		CMPB #$FF
+		BNE TMP1FULL
+		CMPA #$09
+		BHI RET_TECL
+		MOVB TECLA,TMP1
+		BRA RET_TECL
+TMP1FULL:	LDAB TMP2
+		CMPB #$FF
+		BNE TMP2FULL
+		CMPA #$09
+		BHI B_OR_E
+		MOVB TECLA,TMP2
+		BRA RET_TECL
+B_OR_E:	CMPA #$0B
+		BNE NOT_B
+		MOVB #$FF,TMP1
+		BRA RET_TECL
+NOT_B:	MOVB TMP1,VALOR
+		BSET BANDERAS,$08
+		MOVB #$FF,TMP1
+		BRA RET_TECL
+TMP2FULL:	CMPA #$09
+		BHI B_OR_E2
+		BRA RET_TECL
+B_OR_E2:	CMPA #$0B
+		BNE NOT_B2
+		MOVB #$FF,TMP2
+		BRA RET_TECL
+NOT_B2:	LDAA TMP1
+		LDAB #16
+		MUL
+		ADDB TMP2
+		STAB VALOR
+		BSET BANDERAS,$08
+		MOVB #$FF,TMP1
+		MOVB #$FF,TMP2
+RET_TECL:	BCLR BANDERAS,$01
+		RTS
+;********FIN DE SUBRUTINA TECLADO********
 
-;***SUBRUTINA DE INTERRUPCIÓN RTI***
+;*************SUBRUTINA LEDS*************
+
+LEDS: MOVB VALOR,PORTB
+	BCLR BANDERAS,$08
+	RTS
+;*********FIN DE SUBRUTINA LEDS**********
+
+
+;******SUBRUTINA DE INTERRUPCIÓN RTI*****
 RTI_ISR:	TST REB
 		LBNE DEC_REB
 		MOVB	#$FF,BUFFER
-;***********LEER TECLA**************
+;***************LEER TECLA***************
 		MOVB #0,PATRON
 		LDAA #$EF
 		LDX #TECLAS
@@ -137,53 +188,3 @@ DEC_REB:	DEC REB
 RTI_RTRN:	BSET CRGFLG,$80
 		RTI
 ;***FIN DE SUBRUTINA DE INTERRUPCIÓN RTI***
-
-;************SUBRUTINA TECLADO*************
-TECLADO:	LDAA TECLA
-		LDAB TMP1
-		CMPB #$FF
-		BNE TMP1FULL
-		CMPA #$09
-		BHI RET_TECL
-		MOVB TECLA,TMP1
-		BRA RET_TECL
-TMP1FULL:	LDAB TMP2
-		CMPB #$FF
-		BNE TMP2FULL
-		CMPA #$09
-		BHI B_OR_E
-		MOVB TECLA,TMP2
-		BRA RET_TECL
-B_OR_E:	CMPA #$0B
-		BNE NOT_B
-		MOVB #$FF,TMP1
-		BRA RET_TECL
-NOT_B:	MOVB TMP1,VALOR
-		BSET BANDERAS,$08
-		MOVB #$FF,TMP1
-		BRA RET_TECL
-TMP2FULL:	CMPA #$09
-		BHI B_OR_E2
-		BRA RET_TECL
-B_OR_E2:	CMPA #$0B
-		BNE NOT_B2
-		MOVB #$FF,TMP2
-		BRA RET_TECL
-NOT_B2:	LDAA TMP1
-		LDAB #16
-		MUL
-		ADDB TMP2
-		STAB VALOR
-		BSET BANDERAS,$08
-		MOVB #$FF,TMP1
-		MOVB #$FF,TMP2
-RET_TECL:	BCLR BANDERAS,$01
-		RTS
-;********FIN DE SUBRUTINA TECLADO********
-
-;*************SUBRUTINA LEDS*************
-
-LEDS: MOVB VALOR,PORTB
-	BCLR BANDERAS,$08
-	RTS
-;*********FIN DE SUBRUTINA LEDS**********
