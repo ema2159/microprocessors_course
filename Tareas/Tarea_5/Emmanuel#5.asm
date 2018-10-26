@@ -32,6 +32,24 @@ MSG_1		DS 1
 
 		ORG $2000
 ;************************************************************************
+               ;Programa principal y configuración de hadware
+;************************************************************************
+		;Configurar interrupción RTI
+		MOVB #$31,RTICTL
+		BSET CRGINT,$80
+		;Configuración de segmentos y LEDS
+		MOVB #$FF,DDRB
+		BSET DDRJ,$02
+		BCLR PTJ,$02
+		;Habilitar instrucciones mascarables
+		CLI
+		;Configurar stack
+		LDS #$3BFF
+		;Programa principal
+		MOVB #$01,LEDS
+		MOVB #100,CONT_FREE
+		BRA *
+;************************************************************************
                              ;Subrutina BCD:
 ;Esta subrutina sigue el siguiente algoritmo. Por ejemplo, si se tiene un 
 ;valor de $2A en hexadecimal (42 en decimal), este se carga en el acumula-
@@ -56,7 +74,7 @@ BIN_BCD:	LDAB CONT_MAN ;Cargar CONT_MAN en D
 		ORAA #$F0
 NOT_ZERO:	STAA BCD1
 
-		LDAB CONT_FREE ;Cargar CONT_MAN en D
+		LDAB CONT_FREE ;Cargar CONT_FREE en D
 		CLRA ;Limpiar parte alta de D
 		LDX #10
 		IDIV ;D/X = X, r = D
@@ -72,4 +90,24 @@ NOT_ZERO:	STAA BCD1
 NOT_ZERO2:	STAA BCD2 
 		BRA *
 
-RTI_ISR:
+
+
+RTI_ISR:	BRSET	PTIH,$80,L2R ;Si PH7=0, CONT_FREE=DESCENDENTE
+		DEC CONT_FREE
+		BNE SALTO
+		MOVB #200,CONT_FREE
+		MOVB LEDS,PORTB
+		LSL LEDS
+		BNE SALTO
+		MOVB #01,LEDS
+L2R:		INC CONT_FREE ;Si PH7=0, CONT_FREE=ASCENDENTE
+		LDAA CONT_FREE
+		CMPA #200
+		BNE SALTO
+		MOVB #0,CONT_FREE
+		MOVB LEDS,PORTB
+		LSR LEDS
+		BNE SALTO
+		MOVB #$80,LEDS                
+SALTO:	BSET CRGFLG,$80
+		RTI
