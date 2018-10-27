@@ -19,14 +19,14 @@ C0NT_TICKS: DS 1
 DT:         DS 1
 CONT_RTI:	DS 1
 BANDERAS:	DS 1
-		ORG 1010
+		ORG $1010
 BCD1:       DS 1
 BCD2:       DS 1
 DIG1:       DS 1
 DIG2:       DS 1
 DIG3:       DS 1
 DIG4:       DS 1
-SEGMENT:    DS 1
+SEGMENT:    DB $3F,$06,$5B,$4F,$66,$6D,$7D,$07,$7F,$6F
 CONT_7SEG:  DS 1
 CONT_DELAY: DS 1
 D2ms:       DS 1
@@ -65,10 +65,12 @@ MSG_1		DS 1
 		CLR BRILLO
 		;Programa principal
 		MOVB #$01,LEDS
-		MOVB #100,CONT_FREE
-		BRA *
+FIN:		JSR BIN_BCD
+		JSR BCD_7SEG
+		MOVB DIG2,PORTB
+		BRA FIN
 ;************************************************************************
-                             ;Subrutina BCD:
+                             ;Subrutina BIN_BCD:
 ;Esta subrutina sigue el siguiente algoritmo. Por ejemplo, si se tiene un 
 ;valor de $2A en hexadecimal (42 en decimal), este se carga en el acumula-
 ;dor D, y se divide entre 10 mediante el índice X, quedando  $0004  en X, 
@@ -91,7 +93,6 @@ BIN_BCD:	LDAB CONT_MAN ;Cargar CONT_MAN en D
 		BNE NOT_ZERO ;Si el nibble superior es 0, se le guarda $F
 		ORAA #$F0
 NOT_ZERO:	STAA BCD1
-
 		LDAB CONT_FREE ;Cargar CONT_FREE en D
 		CLRA ;Limpiar parte alta de D
 		LDX #10
@@ -106,7 +107,46 @@ NOT_ZERO:	STAA BCD1
 		BNE NOT_ZERO2 ;Si el nibble superior es 0, se le guarda $F
 		ORAA #$F0
 NOT_ZERO2:	STAA BCD2 
-		BRA *
+		RTS
+		
+;************************************************************************
+                        ;Subrutina BCD_7SEG:
+;Esta subrutina se encarga de tomar los valores en  las  variales BCD1 y 
+;BCD2, y se encarga de colocarlas en las variables  DIG1,  DIG2,  DIG3 y 
+;DIG4, codificados para ser desplegados en los displays  de  7 segmentos
+;************************************************************************
+
+BCD_7SEG:	LDX #SEGMENT ;Cargar la dirección de la tabla SEGMENT en X
+		LDAA BCD1   ;Cargar en valor en BDC de CONT_MAN en A
+		ANDA #$0F   ;Quedarse solo con el dígito inferior
+		MOVB A,X DIG1 ;Buscar en la tabla la representación de 7 segmentos indicada para representar el valor
+		LDAA BCD1   ;Cargar en valor en BDC de CONT_MAN en A
+		ANDA #$F0   ;Quedarse solo con el dígito superior
+		LSRA
+		LSRA
+		LSRA
+		LSRA
+		CMPA #$F ;Si el dígito en BCD es F, no debe desplegarse
+		BNE DIG2_ON
+		MOVB #$00,DIG2
+		BRA TO_BCD2 
+DIG2_ON:	MOVB A,X DIG2 ;Buscar en la tabla la representación de 7 segmentos indicada para el valor		
+TO_BCD2:	LDAA BCD2   ;Cargar en valor en BDC de CONT_FREE en A
+		ANDA #$0F   ;Quedarse solo con el dígito inferior
+		MOVB A,X DIG3 ;Buscar en la tabla la representación de 7 segmentos indicada para representar el valor
+		LDAA BCD2   ;Cargar en valor en BDC de CONT_MAN en A
+		ANDA #$F0   ;Quedarse solo con el dígito superior
+		LSRA
+		LSRA
+		LSRA
+		LSRA
+		CMPA #$F ;Si el dígito en BCD es F, no debe desplegarse
+		BNE DIG4_ON
+		MOVB #$00,DIG4
+		BRA OUT_7SEG 
+DIG4_ON:	MOVB A,X DIG4 ;Buscar en la tabla la representación de 7 segmentos indicada para el valor
+OUT_7SEG:	RTS
+		
 
 ;************************************************************************
             ;Subrutina de atención a interrupción RTI
@@ -116,11 +156,20 @@ RTI_ISR:	DEC CONT_RTI
 		BNE SALTO
 		MOVB #200,CONT_RTI
 		BRSET	PTIH,$80,RTI_ASC ;Si PH7=0, CONT_FREE=DESCENDENTE
-		DEC CONT_FREE
+		LDAA CONT_FREE
+		CMPA #0
+		BHI DEC_FREE
+		MOVB #99,CONT_FREE
 		BRA RTI_SALTO1
-RTI_ASC:	INC CONT_FREE
-RTI_SALTO1:	;MOVB LEDS,PORTB
-		BRSET BANDERAS,$01,L2R ;Aquí se define el sentido de los LEDs
+DEC_FREE:	DEC CONT_FREE
+		BRA RTI_SALTO1
+RTI_ASC:	LDAA CONT_FREE
+		CMPA #99
+		BLO INC_FREE
+		MOVB #0,CONT_FREE
+		BRA RTI_SALTO1
+INC_FREE:	INC CONT_FREE
+RTI_SALTO1:	BRSET BANDERAS,$01,L2R ;Aquí se define el sentido de los LEDs
 		LSL LEDS ;Aquí se desplazan los LEDs hacia la izquierda
 		BCC SALTO
 		LDAA BANDERAS
@@ -143,25 +192,30 @@ SALTO:	BSET CRGFLG,$80
 ;************************************************************************
 PTH_ISR:	BRCLR PIFH,$01,PTH2 ;Si no se está presionando botón 1, chequear botón 2
 		BRSET	PTIH,$40,PTH_ASC ;Si PH6=0, CONT_MAN=DESCENDENTE
-		DEC CONT_MAN
-		MOVB CONT_MAN, PORTB
-		BRA SALIR
-PTH_ASC:	INC CONT_MAN
-		MOVB CONT_MAN, PORTB
-		BRA SALIR
+		LDAA CONT_MAN
+		CMPA #0
+		BHI DEC_MAN
+		MOVB #99,CONT_MAN
+		BRA PTH_OUT
+DEC_MAN:	DEC CONT_MAN
+		BRA PTH_OUT
+PTH_ASC:	LDAA CONT_MAN
+		CMPA #99
+		BLO INC_MAN
+		MOVB #0,CONT_MAN
+		BRA RTI_SALTO1
+INC_MAN:	INC CONT_MAN
 PTH2:		BRCLR PIFH,$02,PTH3 ;Si no se está presionando botón 1, chequear botón 3
 		LDAA BRILLO ;Si brillo es 0, no se puede decrementar más, salir
-		BEQ SALIR
-		DEC BRILLO
-		MOVB BRILLO, PORTB	
-		BRA SALIR	
+		BEQ PTH_OUT
+		DEC BRILLO	
+		BRA PTH_OUT	
 PTH3:		LDAA BRILLO ;Si brillo es 100, no se puede incrementar más, salir
 		CMPA #100
-		BEQ SALIR
+		BEQ PTH_OUT
 		INC BRILLO
-		MOVB BRILLO, PORTB	
-		BRA SALIR	
-SALIR:	
+		BRA PTH_OUT	
+PTH_OUT:	
 		BSET PIFH,$03
 		RTI
 
