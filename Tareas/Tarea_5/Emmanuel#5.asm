@@ -1,6 +1,11 @@
 #include registers.inc
+;******************************
+;Configuración de Subrutinas
+;******************************
 		ORG $3E70
 		DW RTI_ISR
+		ORG $3E4C
+		DW PTH_ISR
 ;******************************
 ;Estructuras de datos
 ;******************************
@@ -12,6 +17,9 @@ BRILLO:     DS 1
 CONT_DIG:   DS 1
 C0NT_TICKS: DS 1
 DT:         DS 1
+CONT_RTI:	DS 1
+BANDERAS:	DS 1
+		ORG 1010
 BCD1:       DS 1
 BCD2:       DS 1
 DIG1:       DS 1
@@ -41,10 +49,20 @@ MSG_1		DS 1
 		MOVB #$FF,DDRB
 		BSET DDRJ,$02
 		BCLR PTJ,$02
+		;Configuración de interrupción de key wakepus
+		BSET PIEH,$07
+		BCLR PPSH,$07
 		;Habilitar instrucciones mascarables
 		CLI
 		;Configurar stack
 		LDS #$3BFF
+		;Inicializar las variables
+		CLR BANDERAS
+		MOVB #01,LEDS
+		CLR PORTB
+		CLR CONT_FREE
+		CLR CONT_MAN
+		CLR BRILLO
 		;Programa principal
 		MOVB #$01,LEDS
 		MOVB #100,CONT_FREE
@@ -90,24 +108,60 @@ NOT_ZERO:	STAA BCD1
 NOT_ZERO2:	STAA BCD2 
 		BRA *
 
+;************************************************************************
+            ;Subrutina de atención a interrupción RTI
+;************************************************************************
 
-
-RTI_ISR:	BRSET	PTIH,$80,L2R ;Si PH7=0, CONT_FREE=DESCENDENTE
+RTI_ISR:	DEC CONT_RTI
+		BNE SALTO
+		MOVB #200,CONT_RTI
+		BRSET	PTIH,$80,RTI_ASC ;Si PH7=0, CONT_FREE=DESCENDENTE
 		DEC CONT_FREE
-		BNE SALTO
-		MOVB #200,CONT_FREE
-		MOVB LEDS,PORTB
-		LSL LEDS
-		BNE SALTO
-		MOVB #01,LEDS
-L2R:		INC CONT_FREE ;Si PH7=0, CONT_FREE=ASCENDENTE
-		LDAA CONT_FREE
-		CMPA #200
-		BNE SALTO
-		MOVB #0,CONT_FREE
-		MOVB LEDS,PORTB
-		LSR LEDS
-		BNE SALTO
-		MOVB #$80,LEDS                
+		BRA RTI_SALTO1
+RTI_ASC:	INC CONT_FREE
+RTI_SALTO1:	;MOVB LEDS,PORTB
+		BRSET BANDERAS,$01,L2R ;Aquí se define el sentido de los LEDs
+		LSL LEDS ;Aquí se desplazan los LEDs hacia la izquierda
+		BCC SALTO
+		LDAA BANDERAS
+		EORA #$01
+		STAA BANDERAS
+		MOVB #$40,LEDS
+		BRA SALTO
+L2R:		LSR LEDS ;Aquí se desplazan los LEDs hacia la derecha
+		BCC SALTO
+		LDAA BANDERAS
+		EORA #$01
+		STAA BANDERAS
+		MOVB #$02,LEDS
 SALTO:	BSET CRGFLG,$80
 		RTI
+		
+
+;************************************************************************
+            ;Subrutina de atención a interrupción PTH
+;************************************************************************
+PTH_ISR:	BRCLR PIFH,$01,PTH2 ;Si no se está presionando botón 1, chequear botón 2
+		BRSET	PTIH,$40,PTH_ASC ;Si PH6=0, CONT_MAN=DESCENDENTE
+		DEC CONT_MAN
+		MOVB CONT_MAN, PORTB
+		BRA SALIR
+PTH_ASC:	INC CONT_MAN
+		MOVB CONT_MAN, PORTB
+		BRA SALIR
+PTH2:		BRCLR PIFH,$02,PTH3 ;Si no se está presionando botón 1, chequear botón 3
+		LDAA BRILLO ;Si brillo es 0, no se puede decrementar más, salir
+		BEQ SALIR
+		DEC BRILLO
+		MOVB BRILLO, PORTB	
+		BRA SALIR	
+PTH3:		LDAA BRILLO ;Si brillo es 100, no se puede incrementar más, salir
+		CMPA #100
+		BEQ SALIR
+		INC BRILLO
+		MOVB BRILLO, PORTB	
+		BRA SALIR	
+SALIR:	
+		BSET PIFH,$03
+		RTI
+
