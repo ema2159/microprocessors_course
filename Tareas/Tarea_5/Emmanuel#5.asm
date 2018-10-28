@@ -6,7 +6,7 @@
 		DW RTI_ISR
 		ORG $3E4C
 		DW PTH_ISR
-		ORG $3E64
+		ORG $3E66
 		DW OC4_ISR
 ;******************************
 ;Estructuras de datos
@@ -56,16 +56,11 @@ MSG_1		DS 1
 		BSET PIEH,$07
 		BCLR PPSH,$07
 		;Configuración de interrupción Output Compare
-		;MOVB #$10,TIOS
-		;MOVB #$90,TSCR1
-		;MOVB #$03,TSCR2
-		;MOVB #$01,TCTL1
-		;MOVB #$10,TIE
 		MOVB #$90,TSCR1
-		MOVB #$20,TIOS
+		MOVB #$10,TIOS
 		MOVB #$03,TSCR2
-		MOVB #$04,TCTL1
-		MOVB #$20,TIE
+		MOVB #$01,TCTL1
+		MOVB #$10,TIE
 		;Habilitar instrucciones mascarables
 		CLI
 		;Configurar stack
@@ -79,13 +74,12 @@ MSG_1		DS 1
 		CLR BRILLO
 		LDD TCNT
 		ADDD #60
-		STD TC5
+		STD TC4
 		MOVB #100,CONT_TICKS
 		MOVB #1,CONT_DIG
 		;Programa principal
 		MOVB #$01,LEDS
-FIN:		JSR BIN_BCD
-		JSR BCD_7SEG
+FIN:		
 		BRA FIN
 ;************************************************************************
                              ;Subrutina BIN_BCD:
@@ -241,25 +235,32 @@ PTH_OUT:
 ;************************************************************************
             ;Subrutina de atención a interrupción PTH
 ;************************************************************************
-OC4_ISR:	;MOVB #$FE,PTP
-		;MOVB #5,PORTB
-		DEC CONT_TICKS
+OC4_ISR:	JSR BIN_BCD
+		JSR BCD_7SEG
+		LDAA #100
+		SUBA BRILLO
+		STAA DT
+		LDAA CONT_TICKS
+		CMPA DT
+		BHI OC_BRIGHT
+		MOVB #00,PORTB
+OC_BRIGHT:	DEC CONT_TICKS
 		BNE OUT_OC
 		MOVB #100,CONT_TICKS 
 		BSET PTJ,$02
-		BRCLR CONT_DIG,$01,NEXT1
+		BRCLR CONT_DIG,$01,OC_NEXT1
 		MOVB #$F7,PTP
 		MOVB DIG1,PORTB
-NEXT1:	BRCLR CONT_DIG,$02,NEXT2
+OC_NEXT1:	BRCLR CONT_DIG,$02,OC_NEXT2
 		MOVB #$FB,PTP
 		MOVB DIG2,PORTB
-NEXT2:	BRCLR CONT_DIG,$04,NEXT3
+OC_NEXT2:	BRCLR CONT_DIG,$04,OC_NEXT3
 		MOVB #$FD,PTP
 		MOVB DIG3,PORTB
-NEXT3:	BRCLR CONT_DIG,$08,NEXT4
+OC_NEXT3:	BRCLR CONT_DIG,$08,OC_NEXT4
 		MOVB #$FE,PTP
 		MOVB DIG4,PORTB
-NEXT4:	BRCLR CONT_DIG,$10,CHG_DIG
+OC_NEXT4:	BRCLR CONT_DIG,$10,CHG_DIG
 		MOVB #$FF,PTP
 		BCLR PTJ,$02
 		MOVB LEDS,PORTB
@@ -273,7 +274,7 @@ STORE_DIG:	STAA CONT_DIG
 		
 OUT_OC:	LDD TCNT
 		ADDD #60
-		STD TC5
+		STD TC4
 		RTI
 
 
