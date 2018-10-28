@@ -6,6 +6,8 @@
 		DW RTI_ISR
 		ORG $3E4C
 		DW PTH_ISR
+		ORG $3E64
+		DW OC4_ISR
 ;******************************
 ;Estructuras de datos
 ;******************************
@@ -15,7 +17,7 @@ CONT_FREE:  DS 1
 LEDS:       DS 1
 BRILLO:     DS 1
 CONT_DIG:   DS 1
-C0NT_TICKS: DS 1
+CONT_TICKS: DS 1
 DT:         DS 1
 CONT_RTI:	DS 1
 BANDERAS:	DS 1
@@ -49,9 +51,21 @@ MSG_1		DS 1
 		MOVB #$FF,DDRB
 		BSET DDRJ,$02
 		BCLR PTJ,$02
+		MOVB #$0F,DDRP
 		;Configuración de interrupción de key wakepus
 		BSET PIEH,$07
 		BCLR PPSH,$07
+		;Configuración de interrupción Output Compare
+		;MOVB #$10,TIOS
+		;MOVB #$90,TSCR1
+		;MOVB #$03,TSCR2
+		;MOVB #$01,TCTL1
+		;MOVB #$10,TIE
+		MOVB #$90,TSCR1
+		MOVB #$20,TIOS
+		MOVB #$03,TSCR2
+		MOVB #$04,TCTL1
+		MOVB #$20,TIE
 		;Habilitar instrucciones mascarables
 		CLI
 		;Configurar stack
@@ -59,15 +73,19 @@ MSG_1		DS 1
 		;Inicializar las variables
 		CLR BANDERAS
 		MOVB #01,LEDS
-		CLR PORTB
+		MOVB #0,PORTB
 		CLR CONT_FREE
 		CLR CONT_MAN
 		CLR BRILLO
+		LDD TCNT
+		ADDD #60
+		STD TC5
+		MOVB #100,CONT_TICKS
+		MOVB #1,CONT_DIG
 		;Programa principal
 		MOVB #$01,LEDS
 FIN:		JSR BIN_BCD
 		JSR BCD_7SEG
-		MOVB DIG2,PORTB
 		BRA FIN
 ;************************************************************************
                              ;Subrutina BIN_BCD:
@@ -218,4 +236,52 @@ PTH3:		LDAA BRILLO ;Si brillo es 100, no se puede incrementar más, salir
 PTH_OUT:	
 		BSET PIFH,$03
 		RTI
+
+
+;************************************************************************
+            ;Subrutina de atención a interrupción PTH
+;************************************************************************
+OC4_ISR:	;MOVB #$FE,PTP
+		;MOVB #5,PORTB
+		DEC CONT_TICKS
+		BNE OUT_OC
+		MOVB #100,CONT_TICKS 
+		BSET PTJ,$02
+		BRCLR CONT_DIG,$01,NEXT1
+		MOVB #$F7,PTP
+		MOVB DIG1,PORTB
+NEXT1:	BRCLR CONT_DIG,$02,NEXT2
+		MOVB #$FB,PTP
+		MOVB DIG2,PORTB
+NEXT2:	BRCLR CONT_DIG,$04,NEXT3
+		MOVB #$FD,PTP
+		MOVB DIG3,PORTB
+NEXT3:	BRCLR CONT_DIG,$08,NEXT4
+		MOVB #$FE,PTP
+		MOVB DIG4,PORTB
+NEXT4:	BRCLR CONT_DIG,$10,CHG_DIG
+		MOVB #$FF,PTP
+		BCLR PTJ,$02
+		MOVB LEDS,PORTB
+CHG_DIG:	LDAA CONT_DIG
+		CMPA #$10
+		BLO SHIFT_DIG
+		LDAA #$01
+		BRA STORE_DIG
+SHIFT_DIG:  LSLA
+STORE_DIG:	STAA CONT_DIG
+		
+OUT_OC:	LDD TCNT
+		ADDD #60
+		STD TC5
+		RTI
+
+
+
+
+
+
+
+
+
 
