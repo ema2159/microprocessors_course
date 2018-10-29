@@ -9,6 +9,14 @@
 		ORG $3E66
 		DW OC4_ISR
 ;******************************
+;Definición de comandos
+;******************************
+FUNCTION_SET EQU $28
+ENTRY_MODE_SET EQU $06
+DISPLAY_ON	EQU $0F
+CLEAR_DISPLAY EQU $01
+
+;******************************
 ;Estructuras de datos
 ;******************************
 		ORG $1000
@@ -31,13 +39,13 @@ DIG4:       DS 1
 SEGMENT:    DB $3F,$06,$5B,$4F,$66,$6D,$7D,$07,$7F,$6F
 CONT_7SEG:  DS 2
 CONT_DELAY: DS 1
-D2ms:       DS 1
-D250us:     DS 1
-D40uS:      DS 1
+D2ms:       DB 100
+D260us:     DB 13
+D40uS:      DB 2
 CLEAR_LCD:  DS 1
 ADD_L1:     DS 1
 ADD_L2:     DS 1
-INIDSP:     DS 1
+INIDSP:     DB 4,FUNCTION_SET,FUNCTION_SET,ENTRY_MODE_SET,DISPLAY_ON
 MSG_1		DS 1 
 
 		ORG $2000
@@ -61,6 +69,8 @@ MSG_1		DS 1
 		MOVB #$03,TSCR2
 		MOVB #$01,TCTL1
 		MOVB #$10,TIE
+		;Configuración de pantalla LCD
+		MOVB #$FF,DDRK
 		;Habilitar instrucciones mascarables
 		CLI
 		;Configurar stack
@@ -80,8 +90,8 @@ MSG_1		DS 1
 		MOVB #1,CONT_DIG
 		;Programa principal
 		MOVB #$01,LEDS
-FIN:		
-		BRA FIN
+		JSR INIT_DSPL
+FIN:		BRA FIN
 ;************************************************************************
                              ;Subrutina BIN_BCD:
 ;Esta subrutina sigue el siguiente algoritmo. Por ejemplo, si se tiene un 
@@ -234,7 +244,7 @@ PTH_OUT:
 
 
 ;************************************************************************
-            ;Subrutina de atención a interrupción PTH
+            ;Subrutina de atención a interrupción OC4
 ;************************************************************************
 OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
 		ADDD #1
@@ -286,12 +296,48 @@ DELAY_ZERO:	LDD TCNT ;Ajustar el OC del canal 4
 		STD TC4
 		RTI
 
+;************************************************************************
+            ;Subrutina Delay
+;************************************************************************
 
+DELAY:	 TST CONT_DELAY	
+		 BNE DELAY
+		 RTS
 
+SEND_CMND:	PSHA
+		ANDA #$F0
+		LSRA
+		LSRA
+		STAA PORTK
+		BCLR PORTK,$01
+		BSET PORTK,$02
+		MOVB D260us,CONT_DELAY
+		JSR DELAY
+		BCLR PORTK,$02
+		PULA
+		ANDA #$0F
+		LSLA
+		LSLA
+		STAA PORTK
+		BSET PORTK,$02
+		MOVB D260us,CONT_DELAY
+		JSR DELAY
+		BCLR PORTK,$02
+		RTS
 
-
-
-
-
+INIT_DSPL:	LDX #INIDSP+1
+		LDAB #0
+COMMANDS:	LDAA B,X
+		JSR SEND_CMND
+		MOVB D40uS,CONT_DELAY
+		JSR DELAY
+		INCB
+		CMPB INIDSP
+		BNE COMMANDS
+		LDAA #CLEAR_DISPLAY
+		JSR SEND_CMND
+		MOVB D2ms,CONT_DELAY
+		JSR DELAY
+		RTS
 
 
