@@ -29,7 +29,7 @@ DIG2:       DS 1
 DIG3:       DS 1
 DIG4:       DS 1
 SEGMENT:    DB $3F,$06,$5B,$4F,$66,$6D,$7D,$07,$7F,$6F
-CONT_7SEG:  DS 1
+CONT_7SEG:  DS 2
 CONT_DELAY: DS 1
 D2ms:       DS 1
 D250us:     DS 1
@@ -71,7 +71,8 @@ MSG_1		DS 1
 		MOVB #0,PORTB
 		CLR CONT_FREE
 		CLR CONT_MAN
-		CLR BRILLO
+		LDAA #50
+		STAA BRILLO ;Inicializar el brillo a la mitad
 		LDD TCNT
 		ADDD #60
 		STD TC4
@@ -170,14 +171,14 @@ RTI_ISR:	DEC CONT_RTI
 		BRSET	PTIH,$80,RTI_ASC ;Si PH7=0, CONT_FREE=DESCENDENTE
 		LDAA CONT_FREE
 		CMPA #0
-		BHI DEC_FREE
-		MOVB #99,CONT_FREE
+		BHI DEC_FREE ;Si se intenta decrementar CONT_FREE cuando este es 0, se pasa a 99
+		MOVB #99,CONT_FREE 
 		BRA RTI_SALTO1
 DEC_FREE:	DEC CONT_FREE
 		BRA RTI_SALTO1
 RTI_ASC:	LDAA CONT_FREE
 		CMPA #99
-		BLO INC_FREE
+		BLO INC_FREE ;Si se intenta incrementar CONT_FREE cuando este es 99, se pasa a 0
 		MOVB #0,CONT_FREE
 		BRA RTI_SALTO1
 INC_FREE:	INC CONT_FREE
@@ -206,14 +207,14 @@ PTH_ISR:	BRCLR PIFH,$01,PTH2 ;Si no se está presionando botón 1, chequear bot�
 		BRSET	PTIH,$40,PTH_ASC ;Si PH6=0, CONT_MAN=DESCENDENTE
 		LDAA CONT_MAN
 		CMPA #0
-		BHI DEC_MAN
+		BHI DEC_MAN ;Si se intenta decrementar CONT_MAN cuando este es 0, se pasa a 99
 		MOVB #99,CONT_MAN
 		BRA PTH_OUT
 DEC_MAN:	DEC CONT_MAN
 		BRA PTH_OUT
 PTH_ASC:	LDAA CONT_MAN
 		CMPA #99
-		BLO INC_MAN
+		BLO INC_MAN ;Si se intenta incrementar CONT_FREE cuando este es 99, se pasa a 0
 		MOVB #0,CONT_MAN
 		BRA RTI_SALTO1
 INC_MAN:	INC CONT_MAN
@@ -228,51 +229,59 @@ PTH3:		LDAA BRILLO ;Si brillo es 100, no se puede incrementar más, salir
 		INC BRILLO
 		BRA PTH_OUT	
 PTH_OUT:	
-		BSET PIFH,$03
+		BSET PIFH,$07
 		RTI
 
 
 ;************************************************************************
             ;Subrutina de atención a interrupción PTH
 ;************************************************************************
-OC4_ISR:	JSR BIN_BCD
+OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
+		ADDD #1
+		CPD #5000     ;Si este ya contó 100mS, refrescar valores
+		BNE NOT_RFRSH ;Si no, continuar
+		JSR BIN_BCD
 		JSR BCD_7SEG
-		LDAA #100
-		SUBA BRILLO
-		STAA DT
-		LDAA CONT_TICKS
-		CMPA DT
+NOT_RFRSH:	STD CONT_7SEG
+		LDAA #100 ;Cargar en a el valor de N para calcular DT
+		SUBA BRILLO ;Calcular DT = N-K
+		STAA DT 
+		LDAA CONT_TICKS 
+		CMPA DT ;Si CONT_TICKS=DT, cumplido ciclo de trabajo, bajar señal
 		BHI OC_BRIGHT
 		MOVB #00,PORTB
-OC_BRIGHT:	DEC CONT_TICKS
-		BNE OUT_OC
-		MOVB #100,CONT_TICKS 
-		BSET PTJ,$02
-		BRCLR CONT_DIG,$01,OC_NEXT1
+OC_BRIGHT:	DEC CONT_TICKS ;Si CONT_TICKS=0, pasar a siguiente display
+		BNE OUT_OC 
+		MOVB #100,CONT_TICKS  
+		BSET PTJ,$02  ;Apagar LEDS
+		BRCLR CONT_DIG,$01,OC_NEXT1 ;Si bit 1 de CONT_DIG encendido encender display 1
 		MOVB #$F7,PTP
 		MOVB DIG1,PORTB
-OC_NEXT1:	BRCLR CONT_DIG,$02,OC_NEXT2
+OC_NEXT1:	BRCLR CONT_DIG,$02,OC_NEXT2 ;Si bit 2 de CONT_DIG encendido encender display 2
 		MOVB #$FB,PTP
 		MOVB DIG2,PORTB
-OC_NEXT2:	BRCLR CONT_DIG,$04,OC_NEXT3
+OC_NEXT2:	BRCLR CONT_DIG,$04,OC_NEXT3 ;Si bit 3 de CONT_DIG encendido encender display 3
 		MOVB #$FD,PTP
 		MOVB DIG3,PORTB
-OC_NEXT3:	BRCLR CONT_DIG,$08,OC_NEXT4
+OC_NEXT3:	BRCLR CONT_DIG,$08,OC_NEXT4 ;Si bit 4 de CONT_DIG encendido encender display 4
 		MOVB #$FE,PTP
 		MOVB DIG4,PORTB
-OC_NEXT4:	BRCLR CONT_DIG,$10,CHG_DIG
+OC_NEXT4:	BRCLR CONT_DIG,$10,CHG_DIG ;Si bit 5 de CONT_DIG encendido encender LEDs
 		MOVB #$FF,PTP
 		BCLR PTJ,$02
 		MOVB LEDS,PORTB
-CHG_DIG:	LDAA CONT_DIG
-		CMPA #$10
+CHG_DIG:	LDAA CONT_DIG 
+		CMPA #$10   ;Si se está en LEDs (00010000) pasar a display 1 (00000001)
 		BLO SHIFT_DIG
 		LDAA #$01
 		BRA STORE_DIG
-SHIFT_DIG:  LSLA
+SHIFT_DIG:  LSLA ;Se desplaza CONT_DIG para ir cambiando de display (00000001 = display 1, 00000010 = display 2...)
 STORE_DIG:	STAA CONT_DIG
 		
-OUT_OC:	LDD TCNT
+OUT_OC:	LDAA CONT_DELAY
+		BEQ DELAY_ZERO
+		DEC CONT_DELAY ;Se decrementa CONT_DELAY siempre que no sea cero
+DELAY_ZERO:	LDD TCNT ;Ajustar el OC del canal 4
 		ADDD #60
 		STD TC4
 		RTI
