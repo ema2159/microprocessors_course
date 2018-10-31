@@ -427,7 +427,7 @@ OUT_CARG:	RTS
 ;                   Subrutina REFRSH_LCD
 ;************************************************************************
 REFRSH_LCD:	BRSET PTIH,$40,FREE_ASC ;Si PH6=0, CONT_FREE=DESCENDENTE
-		BRCLR BANDERAS,$02,FREE_OUT
+		BRCLR BANDERAS,$02,FREE_OUT ;Se verifica si ya está desplegado en la pantalla "DOWN", sino desplegar y cambiar bandera
 		LDAA #DDRAM_ADDR1 ;Se carga la dirección de la primera posición de la primera fila de la LCD
 		JSR SEND_CMND ;Se ejecuta el comando
 		MOVB D40uS,CONT_DELAY
@@ -439,9 +439,9 @@ FREE_1:		LDAA 1,X+ ;Se carga cada caracter en A
 		MOVB D40us,CONT_DELAY
 		JSR DELAY
 		BRA FREE_1
-FREE_2:		BCLR BANDERAS,$02		 
+FREE_2:		BCLR BANDERAS,$02 ;Actualizar bandera		 
 		BRA FREE_OUT
-FREE_ASC:	BRSET BANDERAS,$02,FREE_OUT
+FREE_ASC:	BRSET BANDERAS,$02,FREE_OUT ;Se verifica si ya está desplegado en la pantalla "UP", sino desplegar y cambiar bandera 
 		LDAA #DDRAM_ADDR1	;Se carga la dirección de la primera posición de la primera fila de la LCD
 		JSR SEND_CMND ;Se ejecuta el comando
 		MOVB D40uS,CONT_DELAY
@@ -453,34 +453,34 @@ FREE_3:		LDAA 1,X+ ;Se carga cada caracter en A
 		MOVB D40us,CONT_DELAY
 		JSR DELAY
 		BRA FREE_3
-FREE_4:		BSET BANDERAS,$02		 
+FREE_4:		BSET BANDERAS,$02 ;Actualizar bandera	
 FREE_OUT:	BRSET PTIH,$80,MAN_ASC ;Si PH6=0, CONT_FREE=DESCENDENTE
-		BRCLR BANDERAS,$04,MAN_OUT
+		BRCLR BANDERAS,$04,MAN_OUT ;Se verifica si ya está desplegado en la pantalla "DOWN", sino desplegar y cambiar bandera
 		LDAA #DDRAM_ADDR2 ;Se carga la dirección de la primera posición de la primera fila de la LCD
 		JSR SEND_CMND ;Se ejecuta el comando
 		MOVB D40uS,CONT_DELAY
 		JSR DELAY
 		LDX #MAN_MSG_2
 MAN_1:		LDAA 1,X+ ;Se carga cada caracter en A
-		BEQ MAN_2 ;Si se encuentra un caracter de EOM ($00) se terminó de imprimir la primera fila
+		BEQ MAN_2 ;Si se encuentra un caracter de EOM ($00) se terminó de imprimir 
 		JSR SEND_DATA ;Se imprime cada caracter
 		MOVB D40us,CONT_DELAY
 		JSR DELAY
 		BRA MAN_1
-MAN_2:		BCLR BANDERAS,$04		 
+MAN_2:		BCLR BANDERAS,$04 ;Actualizar bandera	 
 		BRA MAN_OUT
-MAN_ASC:	BRSET BANDERAS,$04,MAN_OUT
-		LDAA #DDRAM_ADDR2	;Se carga la dirección de la primera posición de la primera fila de la LCD
+MAN_ASC:	BRSET BANDERAS,$04,MAN_OUT ;Se verifica si ya está desplegado en la pantalla "UP", sino desplegar y cambiar bandera
+		LDAA #DDRAM_ADDR2	;Se carga la dirección de la primera posición de la segunda fila de la LCD
 		JSR SEND_CMND ;Se ejecuta el comando
 		MOVB D40uS,CONT_DELAY
 		JSR DELAY
 		LDX #MAN_MSG_1
 MAN_3:		LDAA 1,X+ ;Se carga cada caracter en A
-		BEQ MAN_4 ;Si se encuentra un caracter de EOM ($00) se terminó de imprimir la primera fila
+		BEQ MAN_4 ;Si se encuentra un caracter de EOM ($00) se terminó de imprimir
 		JSR SEND_DATA ;Se imprime cada caracter
 		MOVB D40us,CONT_DELAY
 		JSR DELAY
 		BRA MAN_3
-MAN_4:		BSET BANDERAS,$04		 
+MAN_4:		BSET BANDERAS,$04 ;Actualizar bandera	 
 MAN_OUT:	RTS 
 
