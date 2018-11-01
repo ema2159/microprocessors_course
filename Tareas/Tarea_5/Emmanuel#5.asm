@@ -97,6 +97,7 @@ FREE_MSG_2:	FCC "CONT FREE: DOWN"
 		MOVB #0,PORTB
 		CLR CONT_FREE
 		CLR CONT_MAN
+		MOVB #200,CONT_RTI ;Inicializar contador de interrupción RTI
 		MOVB #6,BRILLO ;Inicializar brillo
 		LDD TCNT
 		ADDD #60
