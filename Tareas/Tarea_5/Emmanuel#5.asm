@@ -18,7 +18,7 @@ CLEAR_DISPLAY 	EQU $01
 RETURN_HOME 	EQU $02
 DDRAM_ADDR1 	EQU $80
 DDRAM_ADDR2 	EQU $C0
-
+		
 ;******************************
 ;Definición de caracteres
 ;******************************
@@ -77,8 +77,8 @@ FREE_MSG_2:	FCC "CONT FREE: DOWN"
 		BCLR PTJ,$02
 		MOVB #$0F,DDRP
 		;Configuración de interrupción de key wakepus
-		BSET PIEH,$07
-		BCLR PPSH,$07
+		BSET PIEH,$0D
+		BCLR PPSH,$0D
 		;Configuración de interrupción Output Compare
 		MOVB #$90,TSCR1
 		MOVB #$10,TIOS
@@ -110,8 +110,7 @@ FREE_MSG_2:	FCC "CONT FREE: DOWN"
 		LDX #FREE_MSG_1 ;Se carga la primera tabla con los caracteres a imprimir
 		LDY #MAN_MSG_1 ;Se carga la segunda tabla con los caracteres a imprimir
 		JSR CARG_LCD
-		
-FIN:		JSR REFRSH_LCD  
+FIN:		JSR REFRSH_LCD  ;Se verifica constantemente si se deben cambiar los mensajes de acorde a la dirección de los contadores
 		BRA FIN
 
 
@@ -250,12 +249,12 @@ DEC_MAN:	DEC CONT_MAN
 		BRA PTH_OUT
 PTH_ASC:	LDAA CONT_MAN
 		CMPA #99
-		BLO INC_MAN ;Si se intenta incrementar CONT_FREE cuando este es 99, se pasa a 0
+		BLO INC_MAN ;Si se intenta incrementar CONT_MAN cuando este es 99, se pasa a 0
 		MOVB #0,CONT_MAN
 		BRA PTH_OUT
 INC_MAN:	INC CONT_MAN
 		BRA PTH_OUT
-PTH2:		BRCLR PIFH,$02,PTH3 ;Si no se está presionando botón 1, chequear botón 3
+PTH2:		BRCLR PIFH,$04,PTH3 ;Si no se está presionando botón 1, chequear botón 3
 		LDAA BRILLO ;Si brillo es 0, no se puede decrementar más, salir
 		BEQ PTH_OUT
 		DEC BRILLO	
@@ -279,6 +278,7 @@ OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
 		BNE NOT_RFRSH ;Si no, continuar
 		JSR BIN_BCD
 		JSR BCD_7SEG
+		MOVW #0,CONT_7SEG
 NOT_RFRSH:	STD CONT_7SEG
 		LDAA #100 ;Cargar en a el valor de N para calcular DT
 		SUBA BRILLO ;Calcular DT = N-K
