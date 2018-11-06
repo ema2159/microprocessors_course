@@ -1,3 +1,17 @@
+;***********************************************************************
+;                             Tarea 5
+;Autor: Emmanuel Bustos T.
+;Versión: 1.0
+;Fecha: 20 de Octubre, 2018
+;Descripción: Este es un programa que consiste en el manejo de pantallas
+;multiplexadas de tipo 7 segmentos, y de una pantalla LCD autocontenida.
+;En  este programa, mediante las interrupciones PTH y RTI  se  manipulan 
+;dos contadores,  uno  manual y el otro en free running, mientras en una 
+;interrupción de output compare en el canal 4 se multiplexan las los dis-
+;plays de 7 segmentos y los LEDs. Además, se utiliza la interrupción de
+;output compare previamente mencionada para temporizar las distintas sub-
+;rutinas que configuran y manipulan la pantalla LCD.
+;***********************************************************************
 #include registers.inc
 ;******************************
 ;Configuración de Subrutinas
@@ -107,9 +121,15 @@ FREE_MSG_2:	FCC "CONT FREE: DOWN"
 		;Programa principal
 		MOVB #$01,LEDS
 		JSR INIT_DSPL
-		LDX #FREE_MSG_1 ;Se carga la primera tabla con los caracteres a imprimir
-		LDY #MAN_MSG_1 ;Se carga la segunda tabla con los caracteres a imprimir
-		JSR CARG_LCD
+		BRSET PTIH,$40,MAIN_FASC ;Si PH6=0, CONT_FREE=DESCENDENTE
+		LDX #FREE_MSG_2 ;Se carga la primera tabla con los caracteres a imprimir
+		BRA NXT_FREE
+MAIN_FASC:	LDX #FREE_MSG_1 ;Se carga la primera tabla con los caracteres a imprimir
+NXT_FREE:	BRSET PTIH,$80,MAIN_MASC ;Si PH7=0, CONT_MAN=DESCENDENTE
+		LDY #MAN_MSG_2 ;Se carga la segunda tabla con los caracteres a imprimir
+		BRA NXT_MAN
+MAIN_MASC:	LDY #MAN_MSG_1 ;Se carga la segunda tabla con los caracteres a imprimir
+NXT_MAN:	JSR CARG_LCD
 FIN:		JSR REFRSH_LCD  ;Se verifica constantemente si se deben cambiar los mensajes de acorde a la dirección de los contadores
 		BRA FIN
 
@@ -274,11 +294,11 @@ PTH_OUT:
 ;************************************************************************
 OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
 		ADDD #1
-		CPD #5000     ;Si este ya contó 100mS, refrescar valores
+		CPD #500     ;Si este ya contó 100mS, refrescar valores
 		BNE NOT_RFRSH ;Si no, continuar
 		JSR BIN_BCD
 		JSR BCD_7SEG
-		MOVW #0,CONT_7SEG
+		LDD #0
 NOT_RFRSH:	STD CONT_7SEG
 		LDAA #100 ;Cargar en a el valor de N para calcular DT
 		SUBA BRILLO ;Calcular DT = N-K
