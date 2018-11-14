@@ -32,7 +32,6 @@ CLEAR_DISPLAY 	EQU $01
 RETURN_HOME 	EQU $02
 DDRAM_ADDR1 	EQU $80
 DDRAM_ADDR2 	EQU $C0
-		
 ;******************************
 ;Definición de caracteres
 ;******************************

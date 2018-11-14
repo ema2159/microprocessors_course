@@ -19,7 +19,7 @@
 ;                     -----------------                                                     
 ;                     |   |   |   |   |                                                     
 ;                     | 1 | 2 | 3 | 4 |                                                     
-;           PA4($EF)--------------------                                           
+;           PA4($EF)--------------------                                         
 ;                     |   |   |   |   |                                           
 ;                     | 5 | 6 | 7 | 8 |                                           
 ;           PA5($DF)--------------------                                           
@@ -37,16 +37,16 @@
 ;Estructuras de datos
 ;******************************
 		ORG $1000
-PATRON:	DS 1
+PATRON:		DS 1
 REB:		DS 1
-TECLA:	DS 1
-VALOR:	DS 1
+TECLA:		DS 1
+VALOR:		DS 1
 BANDERAS:	DS 1   ;Se usará una bandera adicional para los LEDs, por lo que BANDERAS entonces será X:X:X:X:LEDS_LISTOS:PRIMERA:VALIDA:TECL_LISTA
-BUFFER:	DS 1
+BUFFER:		DS 1
 TMP1:		DS 1
 TMP2:		DS 1
 TMP3:		DS 1
-TECLAS:	DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$00,$0E
+TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$00,$0E
 ;*******Configuración de registros********
 		ORG $1500
 		;Configurar interrupción RTI
@@ -95,11 +95,11 @@ TMP1FULL:	LDAB TMP2
 		BHI B_OR_E
 		MOVB TECLA,TMP2
 		BRA RET_TECL
-B_OR_E:	CMPA #$0B
+B_OR_E:		CMPA #$0B
 		BNE NOT_B
 		MOVB #$FF,TMP1
 		BRA RET_TECL
-NOT_B:	MOVB TMP1,VALOR
+NOT_B:		MOVB TMP1,VALOR
 		BSET BANDERAS,$08
 		MOVB #$FF,TMP1
 		BRA RET_TECL
@@ -110,23 +110,23 @@ B_OR_E2:	CMPA #$0B
 		BNE NOT_B2
 		MOVB #$FF,TMP2
 		BRA RET_TECL
-NOT_B2:	LDAA TMP1
+NOT_B2:		LDAA TMP1
 		LDAB #16
-		MUL
+		MUL 
 		ADDB TMP2
 		STAB VALOR
 		BSET BANDERAS,$08
 		MOVB #$FF,TMP1
 		MOVB #$FF,TMP2
 RET_TECL:	BCLR BANDERAS,$01
-		RTS
+		RTS 
 ;********FIN DE SUBRUTINA TECLADO********
 
 ;*************SUBRUTINA LEDS*************
 
-LEDS: MOVB VALOR,PORTB
-	BCLR BANDERAS,$08
-	RTS
+LEDS:		MOVB VALOR,PORTB
+		BCLR BANDERAS,$08
+		RTS 
 ;*********FIN DE SUBRUTINA LEDS**********
 
 
@@ -144,14 +144,14 @@ LOOP_TEC:	LDAB PATRON
 		STAA PORTA
 		LDAB #0
 		BRCLR PORTA,$01,ENC_TEC
-		INCB
+		INCB 
 		BRCLR PORTA,$02,ENC_TEC
-		INCB
+		INCB 
 		BRCLR PORTA,$04,ENC_TEC
-		INCB
+		INCB 
 		BRCLR PORTA,$08,ENC_TEC
 		INC PATRON
-		ROLA
+		ROLA 
 		BRA LOOP_TEC
 ENC_TEC:	LSL PATRON
 		LSL PATRON
@@ -167,7 +167,7 @@ FIN_LEER:
 		MOVB #10,REB
 		MOVB BUFFER,TECLA
 		BRA RTI_RTRN
-TEC_NE:	LDAA TECLA 
+TEC_NE:		LDAA TECLA 
 		CMPA #$FF
 		BEQ RTI_RTRN
 		BRSET BANDERAS,$02,IS_VALID
@@ -186,5 +186,5 @@ IS_VALID:	LDAB BUFFER
 		BRA RTI_RTRN
 DEC_REB:	DEC REB
 RTI_RTRN:	BSET CRGFLG,$80
-		RTI
+		RTI 
 ;***FIN DE SUBRUTINA DE INTERRUPCIÓN RTI***
