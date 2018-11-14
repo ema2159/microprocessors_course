@@ -43,15 +43,15 @@ PATRON:		DS 1
 REB:		DS 1
 TECLA:		DS 1
 VALOR:		DS 1
-BAND_TEC:	DS 1   ;Se usará una bandera adicional para los LEDs, por lo que BAND_TEC entonces será X:X:X:X:LEDS_LISTOS:PRIMERA:VALIDA:TECL_LISTA
+BAND_TEC:	DS 1   ;X:X:X:X:VALOR:PRIMERA:VALIDA:TECL_LISTA
 BANDERAS	DS 1   ;X:X:Corto:Largo:Dist:S2:S1:C/M
 BUFFER:		DS 1
 TMP1:		DS 1
 TMP2:		DS 1
 TMP3:		DS 1
 TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$00,$0E
-CONT_MAN:   	DS 1
-CONT_FREE:  	DS 1
+Lmax:   	DS 1
+Lmin:  	DS 1
 LEDS:       	DS 1
 BRILLO:     	DS 1
 CONT_DIG:   	DS 1
@@ -76,7 +76,7 @@ D40us:      	DB 2
 		ORG $1500
 		;Configurar interrupción RTI
 		MOVB #$31,RTICTL
-		BCLR CRGINT,$80
+		BSET CRGINT,$80
 		;Configuración de interrupción Output Compare
 		MOVB #$90,TSCR1
 		MOVB #$10,TIOS
@@ -102,8 +102,8 @@ D40us:      	DB 2
 		MOVB #$01,BAND_TEC  
 		MOVB #01,LEDS
 		MOVB #0,PORTB
-		CLR CONT_FREE
-		CLR CONT_MAN
+		CLR Lmin
+		CLR Lmax
 		MOVB #200,CONT_RTI ;Inicializar contador de interrupción RTI
 		MOVB #100,BRILLO ;Inicializar brillo
 		LDD TCNT
@@ -128,27 +128,51 @@ M_MEDICION:	JSR MEDICION
 		BRA LOOP_FIN
 M_STOP:		JSR STOP
 		BRA LOOP_FIN
-		BRCLR BAND_TEC,$01,NOT_TEC
-		JSR TECLADO
-		MOVB VALOR,CONT_FREE
-NOT_TEC:	BRA LOOP_FIN
 
 
 ;******************************************************
 ;		Subrutina medicion
 ;******************************************************
-MEDICION:	MOVB #11,CONT_FREE
+MEDICION:	MOVB #11,Lmin
 		RTS 
+ 
 ;******************************************************
 ;		Subrutina config
 ;******************************************************
 CONFIG:		BSET BANDERAS,$01
-		
+		BSET CRGINT,$80
+		CLR BCD1
+		CLR BCD2
+		BRCLR BAND_TEC,$01,CONF_NOT_TEC
+		JSR TECLADO
+CONF_NOT_TEC:	BRCLR BAND_TEC,$08,END_CONFIG
+CONFIG_MIN:	BRCLR BAND_TEC,$01,CONF_NOT_TEC2
+		JSR TECLADO
+CONF_NOT_TEC2:	LDAA VALOR
+		CMPA #7
+		BHI CONFIG_MIN
+		CMPA #3
+		BLO CONFIG_MIN
+		MOVB VALOR,Lmin
+		MOVB VALOR,BCD1
+		CLR VALOR
+CONFIG_MAX:	BRCLR BAND_TEC,$01,CONF_NOT_TEC3
+		JSR TECLADO
+CONF_NOT_TEC3:	LDAA VALOR
+		CMPA #7
+		BHI CONFIG_MAX
+		CMPA Lmin
+		BLO CONFIG_MAX
+		MOVB VALOR,LmAX
+		MOVB VALOR,BCD2
+		CLR VALOR
+		BCLR BAND_TEC,$08
+END_CONFIG:	BCLR CRGINT,$80
 		RTS 
 ;******************************************************
 ;		Subrutina stop
 ;******************************************************
-STOP:		MOVB #33,CONT_FREE
+STOP:		MOVB #33,Lmin
 		RTS 
 
 ;******************************************************
@@ -210,7 +234,7 @@ RET_TECL:	BCLR BAND_TEC,$01
 ;ra obtener $40. Finalmente se suman A y B, quedando $42, el valor en BCD
 ;deseado.  
 ;************************************************************************
-BIN_BCD:	LDAB CONT_MAN ;Cargar CONT_MAN en D
+BIN_BCD:	LDAB Lmax ;Cargar Lmax en D
 		CLRA ;Limpiar parte alta de D
 		LDX #10
 		IDIV ;D/X = X, r = D
@@ -224,7 +248,7 @@ BIN_BCD:	LDAB CONT_MAN ;Cargar CONT_MAN en D
 		BNE NOT_ZERO ;Si el nibble superior es 0, se le guarda $F
 		ORAA #$F0
 NOT_ZERO:	STAA BCD1
-		LDAB CONT_FREE ;Cargar CONT_FREE en D
+		LDAB Lmin ;Cargar Lmin en D
 		CLRA ;Limpiar parte alta de D
 		LDX #10
 		IDIV ;D/X = X, r = D
@@ -248,10 +272,10 @@ NOT_ZERO2:	STAA BCD2
 ;************************************************************************
 
 BCD_7SEG:	LDX #SEGMENT ;Cargar la dirección de la tabla SEGMENT en X
-		LDAA BCD2   ;Cargar en valor en BDC de CONT_MAN en A
+		LDAA BCD2   ;Cargar en valor en BDC de Lmax en A
 		ANDA #$0F   ;Quedarse solo con el dígito inferior
 		MOVB A,X DIG1 ;Buscar en la tabla la representación de 7 segmentos indicada para representar el valor
-		LDAA BCD2   ;Cargar en valor en BDC de CONT_MAN en A
+		LDAA BCD2   ;Cargar en valor en BDC de Lmax en A
 		ANDA #$F0   ;Quedarse solo con el dígito superior
 		LSRA 
 		LSRA 
@@ -262,10 +286,10 @@ BCD_7SEG:	LDX #SEGMENT ;Cargar la dirección de la tabla SEGMENT en X
 		MOVB #$00,DIG2
 		BRA TO_BCD1 
 DIG2_ON:	MOVB A,X DIG2 ;Buscar en la tabla la representación de 7 segmentos indicada para el valor		
-TO_BCD1:	LDAA BCD1   ;Cargar en valor en BDC de CONT_FREE en A
+TO_BCD1:	LDAA BCD1   ;Cargar en valor en BDC de Lmin en A
 		ANDA #$0F   ;Quedarse solo con el dígito inferior
 		MOVB A,X DIG3 ;Buscar en la tabla la representación de 7 segmentos indicada para representar el valor
-		LDAA BCD1   ;Cargar en valor en BDC de CONT_MAN en A
+		LDAA BCD1   ;Cargar en valor en BDC de Lmax en A
 		ANDA #$F0   ;Quedarse solo con el dígito superior
 		LSRA 
 		LSRA 
