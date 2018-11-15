@@ -51,7 +51,7 @@ TMP2:		DS 1
 TMP3:		DS 1
 TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$00,$0E
 Lmax:   	DS 1
-Lmin:  	DS 1
+Lmin:	  	DS 1
 LEDS:       	DS 1
 BRILLO:     	DS 1
 CONT_DIG:   	DS 1
@@ -64,12 +64,25 @@ DIG1:       	DS 1
 DIG2:       	DS 1
 DIG3:       	DS 1
 DIG4:       	DS 1
+INIDSP:         DB 4,FUNCTION_SET,FUNCTION_SET,ENTRY_MODE_SET,DISPLAY_ON
 SEGMENT:    	DB $3F,$06,$5B,$4F,$66,$6D,$7D,$07,$7F,$6F
 CONT_7SEG:  	DS 2
 CONT_DELAY: 	DS 1
 D2ms:       	DB 100
 D260us:     	DB 13
 D40us:      	DB 2
+CONFIG_MSG1:	FCC " CONFIGURACION  "
+		DB EOM
+CONFIG_MSG2:	FCC "   Lmax:Lmin    "
+		DB EOM
+STOP_MSG1:	FCC "    Medidor     "
+		DB EOM
+STOP_MSG2:	FCC "      623       "
+		DB EOM
+MED_MSG1:	FCC "   Esperando    "
+		DB EOM
+MED_MSG2:	FCC "    Tronco      "
+		DB EOM
 ;******************************************************
 ;     Programa principal y configuración inicial
 ;******************************************************
@@ -112,7 +125,8 @@ D40us:      	DB 2
 		MOVB #100,CONT_TICKS
 		MOVB #1,CONT_DIG
 		;Programa principal
-		MOVB #$01,LEDS
+		MOVB #$00,LEDS
+		JSR INIT_DSPL
 		MOVB #10,REB
 		MOVB #$00,BAND_TEC
 		MOVB #$FF,TMP1 ;Se colocan las variables temporales en $FF
@@ -133,17 +147,33 @@ M_STOP:		JSR STOP
 ;******************************************************
 ;		Subrutina medicion
 ;******************************************************
-MEDICION:	MOVB #11,Lmin
-		RTS 
+MEDICION:	LDAA LEDS
+		CMPA #$02
+		BEQ MED_CONT
+		MOVB #$02,LEDS
+		MOVB #$FF,BCD1
+		MOVB #$FF,BCD2
+		LDX #MED_MSG1
+		LDY #MED_MSG2
+		JSR CARG_LCD
+MED_CONT:	RTS 
  
 ;******************************************************
 ;		Subrutina config
 ;******************************************************
 CONFIG:		BSET BANDERAS,$01
 		BSET CRGINT,$80
+		LDAA LEDS
+		CMPA #$01
+		BEQ CONFIG_CONT
+		MOVB #$01,LEDS
 		CLR BCD1
 		CLR BCD2
-		BRCLR BAND_TEC,$01,CONF_NOT_TEC
+		JSR BCD_7SEG
+		LDX #CONFIG_MSG1
+		LDY #CONFIG_MSG2
+		JSR CARG_LCD
+CONFIG_CONT:	BRCLR BAND_TEC,$01,CONF_NOT_TEC
 		JSR TECLADO
 CONF_NOT_TEC:	BRCLR BAND_TEC,$08,END_CONFIG
 CONFIG_MIN:	BRCLR BAND_TEC,$01,CONF_NOT_TEC2
@@ -155,6 +185,7 @@ CONF_NOT_TEC2:	LDAA VALOR
 		BLO CONFIG_MIN
 		MOVB VALOR,Lmin
 		MOVB VALOR,BCD1
+		JSR BCD_7SEG
 		CLR VALOR
 CONFIG_MAX:	BRCLR BAND_TEC,$01,CONF_NOT_TEC3
 		JSR TECLADO
@@ -163,17 +194,27 @@ CONF_NOT_TEC3:	LDAA VALOR
 		BHI CONFIG_MAX
 		CMPA Lmin
 		BLO CONFIG_MAX
-		MOVB VALOR,LmAX
+		MOVB VALOR,Lmax
 		MOVB VALOR,BCD2
+		JSR BCD_7SEG
 		CLR VALOR
 		BCLR BAND_TEC,$08
 END_CONFIG:	BCLR CRGINT,$80
 		RTS 
+
 ;******************************************************
 ;		Subrutina stop
 ;******************************************************
-STOP:		MOVB #33,Lmin
-		RTS 
+STOP:		LDAA LEDS
+		CMPA #$04
+		BEQ STOP_CONT
+		MOVB #$04,LEDS
+		MOVB #$FF,BCD1
+		MOVB #$FF,BCD2
+		LDX #STOP_MSG1
+		LDY #STOP_MSG2
+		JSR CARG_LCD
+STOP_CONT:	RTS 
 
 ;******************************************************
 ;               SUBRUTINA TECLADO
@@ -274,8 +315,12 @@ NOT_ZERO2:	STAA BCD2
 BCD_7SEG:	LDX #SEGMENT ;Cargar la dirección de la tabla SEGMENT en X
 		LDAA BCD2   ;Cargar en valor en BDC de Lmax en A
 		ANDA #$0F   ;Quedarse solo con el dígito inferior
-		MOVB A,X DIG1 ;Buscar en la tabla la representación de 7 segmentos indicada para representar el valor
-		LDAA BCD2   ;Cargar en valor en BDC de Lmax en A
+		CMPA #$F ;Si el dígito en BCD es F, no debe desplegarse
+		BNE DIG1_ON
+		MOVB #$00,DIG1
+		BRA TO_DIG2 
+DIG1_ON:	MOVB A,X DIG1 ;Buscar en la tabla la representación de 7 segmentos indicada para representar el valor
+TO_DIG2:	LDAA BCD2   ;Cargar en valor en BDC de Lmax en A
 		ANDA #$F0   ;Quedarse solo con el dígito superior
 		LSRA 
 		LSRA 
@@ -288,8 +333,12 @@ BCD_7SEG:	LDX #SEGMENT ;Cargar la dirección de la tabla SEGMENT en X
 DIG2_ON:	MOVB A,X DIG2 ;Buscar en la tabla la representación de 7 segmentos indicada para el valor		
 TO_BCD1:	LDAA BCD1   ;Cargar en valor en BDC de Lmin en A
 		ANDA #$0F   ;Quedarse solo con el dígito inferior
-		MOVB A,X DIG3 ;Buscar en la tabla la representación de 7 segmentos indicada para representar el valor
-		LDAA BCD1   ;Cargar en valor en BDC de Lmax en A
+		CMPA #$F ;Si el dígito en BCD es F, no debe desplegarse
+		BNE DIG3_ON
+		MOVB #$00,DIG3
+		BRA TO_DIG4 
+DIG3_ON:	MOVB A,X DIG3 ;Buscar en la tabla la representación de 7 segmentos indicada para representar el valor
+TO_DIG4:	LDAA BCD1   ;Cargar en valor en BDC de Lmax en A
 		ANDA #$F0   ;Quedarse solo con el dígito superior
 		LSRA 
 		LSRA 
@@ -367,7 +416,6 @@ OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
 		ADDD #1
 		CPD #500     ;Si este ya contó 100mS, refrescar valores
 		BNE NOT_RFRSH ;Si no, continuar
-		JSR BIN_BCD
 		JSR BCD_7SEG
 		LDD #0
 NOT_RFRSH:	STD CONT_7SEG
@@ -413,3 +461,102 @@ DELAY_ZERO:	LDD TCNT ;Ajustar el OC del canal 4
 		STD TC4
 		RTI 
 
+;************************************************************************
+            ;Subrutina Delay
+;************************************************************************
+DELAY:		 TST CONT_DELAY	
+		 BNE DELAY
+		 RTS 
+
+;************************************************************************
+            ;Subrutina SEND_CMND
+;************************************************************************
+SEND_CMND:	PSHA 
+		ANDA #$F0 ;Se deja solo el nibble superior del comando a ejecutar
+		LSRA 
+		LSRA 
+		STAA PORTK
+		BCLR PORTK,$01 ;Se habilita el envío de comandos
+		BSET PORTK,$02 ;Se escribe sobre la LCD
+		MOVB D260us,CONT_DELAY
+		JSR DELAY
+		BCLR PORTK,$02 ;Se deshabilita escritura sobre la LCD
+		PULA 
+		ANDA #$0F ;Se deja solo el nibble inferior del comando a ejecutar
+		LSLA 
+		LSLA 
+		STAA PORTK
+		BSET PORTK,$02 ;Se escribe sobre la LCD
+		MOVB D260us,CONT_DELAY
+		JSR DELAY
+		BCLR PORTK,$02 ;Se deshabilita escritura sobre la LCD
+		RTS 
+
+;************************************************************************
+            ;Subrutina SEND_DATA
+;************************************************************************
+SEND_DATA:	PSHA 
+		ANDA #$F0 ;Se deja solo el nibble superior del dato a enviar
+		LSRA 
+		LSRA ;Se deja el nibble superior en la posición PORTK.5-PORTK.2
+		STAA PORTK
+		BSET PORTK,$01 ;Se habilita el envío de datos
+		BSET PORTK,$02 ;Se escribe sobre la LCD
+		MOVB D260us,CONT_DELAY 
+		JSR DELAY
+		BCLR PORTK,$02 ;Se deshabilita escritura sobre la LCD
+		PULA 
+		ANDA #$0F ;Se deja solo el nibble inferior del dato a enviar
+		LSLA 
+		LSLA ;Se deja el nibble inferior en la posición PORTK.5-PORTK.2
+		STAA PORTK
+		BSET PORTK,$01 ;Se habilita envío de datos
+		BSET PORTK,$02 ;Se escribe sobre la LCD
+		MOVB D260us,CONT_DELAY
+		JSR DELAY
+		BCLR PORTK,$02 ;Se deshabilita escritura sobre la LCD
+		RTS 
+
+
+;************************************************************************
+                      ;Subrutina INIT_DSPL
+;************************************************************************
+INIT_DSPL:	LDX #INIDSP+1 ;Se carga en X la tabla que contiene los comandos de inicialización
+		LDAB #0 ;Se carga 0 en B
+COMMANDS:	LDAA B,X ;Se accede a la tabla de comandos mediante direccionamiento indexado por acumulador
+		JSR SEND_CMND ;Se ejecuta cada comando
+		MOVB D40us,CONT_DELAY
+		JSR DELAY
+		INCB 
+		CMPB INIDSP ;Si ya se ejecutaron todos los comandos de la tabla, terminar comandos de inicialización
+		BNE COMMANDS
+		LDAA #CLEAR_DISPLAY ;Cargar comando de limpiar pantalla
+		JSR SEND_CMND ;Ejecutar comando de limpiar pantalla
+		MOVB D2ms,CONT_DELAY
+		JSR DELAY
+		RTS 
+
+;************************************************************************
+                      ;Subrutina CARG_LCD
+;************************************************************************
+CARG_LCD:	LDAA #DDRAM_ADDR1	;Se carga la dirección de la primera posición de la primera fila de la LCD
+		JSR SEND_CMND ;Se ejecuta el comando
+		MOVB D40uS,CONT_DELAY
+		JSR DELAY
+CARG_1:		LDAA 1,X+ ;Se carga cada caracter en A
+		BEQ CARG_2 ;Si se encuentra un caracter de EOM ($00) se terminó de imprimir la primera fila
+		JSR SEND_DATA ;Se imprime cada caracter
+		MOVB D40us,CONT_DELAY
+		JSR DELAY
+		BRA CARG_1 
+CARG_2:		LDAA #DDRAM_ADDR2 ;Se carga la dirección de la primera posición de la segunda fila de la LCD
+		JSR SEND_CMND
+		MOVB D40us,CONT_DELAY 
+		JSR DELAY
+CARG_3:		LDAA 1,Y+ ;Se carga cada caracter en A
+		BEQ OUT_CARG ;Si se encuentra un caracter de EOM ($00) se terminó de imprimir la primera fila
+		JSR SEND_DATA ;Se imprime cada caracter
+		MOVB D40us,CONT_DELAY
+		JSR DELAY
+		BRA CARG_3
+OUT_CARG:	RTS 
