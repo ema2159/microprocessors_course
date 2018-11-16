@@ -53,7 +53,7 @@ TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$00,$0E
 Lmax:   	DS 1
 Lmin:	  	DS 1
 LEDS:       	DS 1
-BRILLO:     	DS 1
+BRILLO:     	DS 1,
 CONT_DIG:   	DS 1
 CONT_TICKS: 	DS 1
 DT:         	DS 1
@@ -71,6 +71,10 @@ CONT_DELAY: 	DS 1
 D2ms:       	DB 100
 D260us:     	DB 13
 D40us:      	DB 2
+VELOC:		DS 1
+LONG:		DS 1
+Ticks_VEL:	DS 2
+Ticks_LONG:	DS 2
 CONFIG_MSG1:	FCC " CONFIGURACION  "
 		DB EOM
 CONFIG_MSG2:	FCC "   Lmax:Lmin    "
@@ -132,10 +136,12 @@ MED_MSG2:	FCC "    Tronco      "
 		MOVB #$FF,TMP1 ;Se colocan las variables temporales en $FF
 		MOVB #$FF,TMP2 ;para indicar que se encuentran vacías 
 		CLR VALOR
-LOOP_FIN:	BRSET	PTIH,$40,PH61 ;Se verifica el modo del medidor mediante los Dip switches
-		BRCLR	PTIH,$80,M_STOP ;Si ambos switches PH6 y PH7 están en 0, se entra en modo stop
+		MOVW #1000,Ticks_VEL
+		MOVW #2300,Ticks_LONG
+LOOP_FIN:	BRSET PTIH,$40,PH61 ;Se verifica el modo del medidor mediante los Dip switches
+		BRCLR PTIH,$80,M_STOP ;Si ambos switches PH6 y PH7 están en 0, se entra en modo stop
 		BRA M_CONFIG ;Si los switches son distintos entre sí, se entra en modo config
-PH61:		BRSET	PTIH,$80,M_MEDICION ;Si ambos switches PH6 y PH7 están en 1, se entra en modo medicion
+PH61:		BRSET PTIH,$80,M_MEDICION ;Si ambos switches PH6 y PH7 están en 1, se entra en modo medicion
 M_CONFIG:	JSR CONFIG
 		BRA LOOP_FIN
 M_MEDICION:	JSR MEDICION	
@@ -151,8 +157,10 @@ MEDICION:	LDAA LEDS
 		CMPA #$02
 		BEQ MED_CONT
 		MOVB #$02,LEDS
-		MOVB #$FF,BCD1
-		MOVB #$FF,BCD2
+		JSR CALCULAR
+		JSR BIN_BCD
+		;MOVB VELOC,BCD1
+		;MOVB DIST,BCD2
 		LDX #MED_MSG1
 		LDY #MED_MSG2
 		JSR CARG_LCD
@@ -188,7 +196,7 @@ CONF_NOT_TEC2:	LDAA VALOR
 		JSR BCD_7SEG
 		CLR VALOR
 CONFIG_MAX:	BRCLR BAND_TEC,$01,CONF_NOT_TEC3
-		JSR TECLADO
+		JSR TECLADO	
 CONF_NOT_TEC3:	LDAA VALOR
 		CMPA #7
 		BHI CONFIG_MAX
@@ -224,45 +232,45 @@ STOP_CONT:	RTS
 ;la tecla ENTER, o decida  borrar la tecla que presionó
 ;haciendo uso de la tecla BORRAR.
 ;******************************************************
-TECLADO:	LDAA TECLA
-		LDAB TMP1
+TECLADO:	LDAA TECLA ;Se carga la tecla obtenida en la subrutina RTI
+		LDAB TMP1  ;Se carga TMP1
+		CMPB #$FF  ;Si TMP1 contiene $FF, está vacío
+		BNE TMP1FULL ;Si está lleno chequear siguiente espacio
+		CMPA #$09  ;Si TECLA es mayor a 9, debe ser o B o E
+		BHI RET_TECL ;Si es la primera tecla y es B o E, no se debe hacer nada
+		MOVB TECLA,TMP1 ;Si es algún valor de 0 a 9, guardar en TMP1
+		BRA RET_TECL 
+TMP1FULL:	LDAB TMP2 ;Se verifica si TMP2 está vacío
 		CMPB #$FF
-		BNE TMP1FULL
-		CMPA #$09
-		BHI RET_TECL
-		MOVB TECLA,TMP1
-		BRA RET_TECL
-TMP1FULL:	LDAB TMP2
-		CMPB #$FF
-		BNE TMP2FULL
-		CMPA #$09
-		BHI B_OR_E
-		MOVB TECLA,TMP2
-		BRA RET_TECL
-B_OR_E:		CMPA #$0B
+		BNE TMP2FULL ;Si esá lleno, verificar la tecla que fue presionada
+		CMPA #$09    ;Si está vacío verificar si es un valor de 0 a 9
+		BHI B_OR_E   ;Si no, debe ser B o E
+		MOVB TECLA,TMP2 ;Si es un valor de 0 a 9 guardar
+		BRA RET_TECL 
+B_OR_E:		CMPA #$0B ;Si es B colocar FF en TMP1 (indicar que está vacío)
 		BNE NOT_B
 		MOVB #$FF,TMP1
 		BRA RET_TECL
-NOT_B:		MOVB TMP1,VALOR
-		BSET BAND_TEC,$08
-		MOVB #$FF,TMP1
+NOT_B:		MOVB TMP1,VALOR ;Si es E, almacenar TMP1 en VALOR
+		BSET BAND_TEC,$08 ;Indicar que se guardó un VALOR
+		MOVB #$FF,TMP1 ;Vaciar TMP1
 		BRA RET_TECL
-TMP2FULL:	CMPA #$09
-		BHI B_OR_E2
-		BRA RET_TECL
-B_OR_E2:	CMPA #$0B
+TMP2FULL:	CMPA #$09 ;Si ambos temporales están llenos, verificar el valor de la última tecla presionada
+		BHI B_OR_E2 ;Si esta es mayor a 9, es B o E
+		BRA RET_TECL ;Si e algún valor de 0 a 9, salir
+B_OR_E2:	CMPA #$0B ;Si es B colocar FF en TMP2 para vaciarlo
 		BNE NOT_B2
 		MOVB #$FF,TMP2
 		BRA RET_TECL
-NOT_B2:		LDAA TMP1
+NOT_B2:		LDAA TMP1 ;Si no, calcular el valor correspondiente mediante los temporales
 		LDAB #10
 		MUL 
 		ADDB TMP2
-		STAB VALOR
-		BSET BAND_TEC,$08
-		MOVB #$FF,TMP1
+		STAB VALOR ;y guardarlo en VALOR
+		BSET BAND_TEC,$08 ;Indicar que un nuevo valor fue guardado
+		MOVB #$FF,TMP1 ;Vaciar los temporales
 		MOVB #$FF,TMP2
-RET_TECL:	BCLR BAND_TEC,$01
+RET_TECL:	BCLR BAND_TEC,$01 ;Borrar bandera de tecla lista
 		RTS 
 
 ;************************************************************************
@@ -275,7 +283,7 @@ RET_TECL:	BCLR BAND_TEC,$01
 ;ra obtener $40. Finalmente se suman A y B, quedando $42, el valor en BCD
 ;deseado.  
 ;************************************************************************
-BIN_BCD:	LDAB Lmax ;Cargar Lmax en D
+BIN_BCD:	LDAB LONG ;Cargar Lmax en D
 		CLRA ;Limpiar parte alta de D
 		LDX #10
 		IDIV ;D/X = X, r = D
@@ -289,7 +297,7 @@ BIN_BCD:	LDAB Lmax ;Cargar Lmax en D
 		BNE NOT_ZERO ;Si el nibble superior es 0, se le guarda $F
 		ORAA #$F0
 NOT_ZERO:	STAA BCD1
-		LDAB Lmin ;Cargar Lmin en D
+		LDAB VELOC ;Cargar Lmin en D
 		CLRA ;Limpiar parte alta de D
 		LDX #10
 		IDIV ;D/X = X, r = D
@@ -351,62 +359,81 @@ TO_DIG4:	LDAA BCD1   ;Cargar en valor en BDC de Lmax en A
 DIG4_ON:	MOVB A,X DIG4 ;Buscar en la tabla la representación de 7 segmentos indicada para el valor
 OUT_7SEG:	RTS 
 
+
+;******************************************************
+;		Subrutina CALCULAR
+;******************************************************
+CALCULAR:	LDD #5000 ;Se carga en D 5m x (1mS)^-1
+		LDX Ticks_VEL 
+		IDIV ;Se obtiene 5m / ((1mS)xTicks_VEL), correspondiente a la velocidad
+		TFR X,A ;Se transfiere el resultado a A
+		STAA VELOC ;Se guarda el resultado en VELOC
+		LDAB VELOC
+		CLRA ;Cargar VELOC en D (D = A:B = 00:VELOC) 
+		LDY Ticks_LONG
+		EMUL ;Se obtiene VELOC x Ticks_LONG 
+		LDX #1000 
+		IDIV ;Se obtiene VELOC x (Ticks_LONG / 1000) que es igual a VELOC x (Ticks_LONG x 1mS)
+		TFR X,B ;Se transfiere el resultado a B
+		STAB LONG ;Se guarda el resultado en LONG
+		RTS 
+
 ;******************************************************
 ;           SUBRUTINA DE INTERRUPCIÓN RTI
 ;******************************************************
 RTI_ISR:	TST REB
-		LBNE DEC_REB
+		LBNE DEC_REB ;Verificar si ya se terminó el período de rebotes
 		MOVB #$FF,BUFFER
-		MOVB #0,PATRON
-		LDAA #$EF
-		LDX #TECLAS
+		MOVB #0,PATRON 
+		LDAA #$EF ;Cargar en A el valor para chequear la primera fila del teclado
+		LDX #TECLAS ;Cargar la tabla de teclas
 LOOP_TEC:	LDAB PATRON
-		CMPB #3
-		BEQ FIN_LEER
-		STAA PORTA
+		CMPB #3 ;Verificar si ya se revisaron las tres filas del teclado
+		BEQ FIN_LEER ;Si sí, ir a fin
+		STAA PORTA ;Escribir en los primeros 4 bits del puerto A el valor correspondiente (E,D,B,7) para chequear la fila correspondiente
 		LDAB #0
-		BRCLR PORTA,$01,ENC_TEC
+		BRCLR PORTA,$01,ENC_TEC ;Ver si alguno de los botones en la fila correspondiente fue presionado
 		INCB 
 		BRCLR PORTA,$02,ENC_TEC
 		INCB 
 		BRCLR PORTA,$04,ENC_TEC
 		INCB 
 		BRCLR PORTA,$08,ENC_TEC
-		INC PATRON
+		INC PATRON ;Pasar a chequear siguiente fila
 		ROLA 
 		BRA LOOP_TEC
-ENC_TEC:	LSL PATRON
+ENC_TEC:	LSL PATRON 
 		LSL PATRON
-		ADDB PATRON
-		MOVB B,X BUFFER
+		ADDB PATRON ;Obtener el índice indicado para obtener el valor correspondiente de la tabla
+		MOVB B,X BUFFER ;Acceder a la tabla por direccionamiento indexado por acumulador
 FIN_LEER: 
 		LDAA #$FF
-		CMPA BUFFER
-		BEQ TEC_NE
-		BRSET BAND_TEC,$04,TEC_NE
-		BSET BAND_TEC,$04
-		MOVB #10,REB
-		MOVB BUFFER,TECLA
-		BRA RTI_RTRN
-TEC_NE:		LDAA TECLA 
+		CMPA BUFFER ;Ver si se presionó alguna tecla
+		BEQ TEC_NE ;Si no, saltar
+		BRSET BAND_TEC,$04,TEC_NE ;Si PRIMERA = 1, continuar 
+		BSET BAND_TEC,$04 ;Si no, colocar PRIMERA en 1
+		MOVB #10,REB ;Activar rebotes
+		MOVB BUFFER,TECLA ;Mover BUFFER a TECLA
+		BRA RTI_RTRN ;Salir de la subrutina
+TEC_NE:		LDAA TECLA ;Verificar si TECLA es $FF
 		CMPA #$FF
-		BEQ RTI_RTRN
-		BRSET BAND_TEC,$02,IS_VALID
-		CMPA BUFFER
-		BEQ TEC_BUFF
-		MOVB #$FF,TECLA
+		BEQ RTI_RTRN ;Si sí, salir
+		BRSET BAND_TEC,$02,IS_VALID ;Si TECLA es válida, proceder a guardar
+		CMPA BUFFER ;Verificar si TECLA es igual a BUFFER después de la supresión de rebotes
+		BEQ TEC_BUFF ;Si sí, proceder
+		MOVB #$FF,TECLA ;Si no, colocar TECLA en $FF y poner PRIMERA en 0
 		BCLR BAND_TEC,$04
 		BRA RTI_RTRN
-TEC_BUFF:	BSET BAND_TEC,$02
+TEC_BUFF:	BSET BAND_TEC,$02 ;Si TECLA y BUFFER son iguales, activar VALID
 		BRA RTI_RTRN
-IS_VALID:	LDAB BUFFER
-		CMPB #$FF
-		BNE RTI_RTRN
-		BSET BAND_TEC,$01
-		BCLR BAND_TEC,$06
+IS_VALID:	LDAB BUFFER ;Verificar si la tecla fue liberada
+		CMPB #$FF ;Si no, salir
+		BNE RTI_RTRN 
+		BSET BAND_TEC,$01 ;Si sí, colocar TECL_LISTA en 1
+		BCLR BAND_TEC,$06 ;COLOCAR PRIMERA y VALID en 0
 		BRA RTI_RTRN
-DEC_REB:	DEC REB
-RTI_RTRN:	BSET CRGFLG,$80
+DEC_REB:	DEC REB ;Decrementar rebotes
+RTI_RTRN:	BSET CRGFLG,$80 ;Levantar bandera de RTI
 		RTI 
 
 ;************************************************************************
