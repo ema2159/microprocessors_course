@@ -15,6 +15,8 @@
 ;******************************************************
 	;	ORG $3E4C
 	;	DW PTH_ISR
+		ORG $3E52
+		DW ATD0_ISR
 		ORG $3E66
 		DW OC4_ISR
 		ORG $3E70
@@ -53,7 +55,8 @@ TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$00,$0E
 Lmax:   	DS 1
 Lmin:	  	DS 1
 LEDS:       	DS 1
-BRILLO:     	DS 1,
+BRILLO:     	DS 1
+POT:		DS 1
 CONT_DIG:   	DS 1
 CONT_TICKS: 	DS 1
 DT:         	DS 1
@@ -94,6 +97,13 @@ MED_MSG2:	FCC "    Tronco      "
 		;Configurar interrupción RTI
 		MOVB #$31,RTICTL
 		BSET CRGINT,$80
+		;Configuracion de interrupción de convertidor A/D
+		MOVB #$C2,ATD0CTL2
+		LDAA #200
+AD_CONF:	DBNE A,AD_CONF
+		MOVB #$20,ATD0CTL3
+		MOVB #$B7,ATD0CTL4
+		MOVB #$87,ATD0CTL5
 		;Configuración de interrupción Output Compare
 		MOVB #$90,TSCR1
 		MOVB #$10,TIOS
@@ -443,6 +453,13 @@ OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
 		ADDD #1
 		CPD #500     ;Si este ya contó 100mS, refrescar valores
 		BNE NOT_RFRSH ;Si no, continuar
+		LDAA POT
+		LDAB #100
+		MUL 
+		LDX #255
+		IDIV 
+		TFR X,A
+		STAA BRILLO
 		JSR BCD_7SEG
 		LDD #0
 NOT_RFRSH:	STD CONT_7SEG
@@ -587,3 +604,17 @@ CARG_3:		LDAA 1,Y+ ;Se carga cada caracter en A
 		JSR DELAY
 		BRA CARG_3
 OUT_CARG:	RTS 
+
+
+;************************************************************************
+                      ;Subrutina ATD0_ISR
+;************************************************************************
+ATD0_ISR:	LDD ADR00H
+		ADDD ADR01H			
+		ADDD ADR02H			
+		ADDD ADR03H			
+		LSRD 
+		LSRD 
+		STAB POT
+		MOVB #$87,ATD0CTL5
+		RTI	
