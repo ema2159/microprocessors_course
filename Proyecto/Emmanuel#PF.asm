@@ -13,8 +13,8 @@
 ;******************************************************
 ;     Configuración de vectores de interrupción
 ;******************************************************
-	;	ORG $3E4C
-	;	DW PTH_ISR
+		ORG $3E4C
+		DW PTH_ISR
 		ORG $3E52
 		DW ATD0_ISR
 		ORG $3E66
@@ -46,7 +46,7 @@ REB:		DS 1
 TECLA:		DS 1
 VALOR:		DS 1
 BAND_TEC:	DS 1   ;X:X:X:X:VALOR:PRIMERA:VALIDA:TECL_LISTA
-BANDERAS	DS 1   ;X:X:Corto:Largo:Dist:S2:S1:C/M
+BANDERAS	DS 1   ;X:X:Largo:Corto:Dist:S2:S1:C/M
 BUFFER:		DS 1
 TMP1:		DS 1
 TMP2:		DS 1
@@ -90,13 +90,28 @@ MED_MSG1:	FCC "   Esperando    "
 		DB EOM
 MED_MSG2:	FCC "    Tronco      "
 		DB EOM
+MED_MSG3:	FCC "   Midiendo     "
+		DB EOM
+MED_MSG4:	FCC "   Espere...    "
+		DB EOM
+MED_MSG5:	FCC "   Longitud     "
+		DB EOM
+MED_MSG6:	FCC "    Excesiva    "
+		DB EOM
+MED_MSG7:	FCC "   Deficiente   "
+		DB EOM
+MED_MSG8:	FCC "   En ámbito    "
+		DB EOM
 ;******************************************************
 ;     Programa principal y configuración inicial
 ;******************************************************
 		ORG $1500
 		;Configurar interrupción RTI
 		MOVB #$31,RTICTL
-		BSET CRGINT,$80
+		BCLR CRGINT,$80
+		;Configuración de interrupción de key wakepus
+		BCLR PIEH,$FF
+		BCLR PPSH,$09
 		;Configuracion de interrupción de convertidor A/D
 		MOVB #$C2,ATD0CTL2
 		LDAA #200
@@ -163,18 +178,31 @@ M_STOP:		JSR STOP
 ;******************************************************
 ;		Subrutina medicion
 ;******************************************************
-MEDICION:	LDAA LEDS
-		CMPA #$02
-		BEQ MED_CONT
+MEDICION:	BCLR BANDERAS,$01 ;La bandera C/M se coloca en 0
+		BSET PIEH,$09 ;Se habilita la interrupción PTIH_ISR para los pulsadores PH0 y PH3
 		MOVB #$02,LEDS
-		JSR CALCULAR
-		JSR BIN_BCD
-		;MOVB VELOC,BCD1
-		;MOVB DIST,BCD2
-		LDX #MED_MSG1
+		LDX #MED_MSG1 ;Imprimir mensaje de esperando tronco
 		LDY #MED_MSG2
 		JSR CARG_LCD
-MED_CONT:	RTS 
+MED_S1:		BRCLR BANDERAS,$02,MED_S1 ;Si S1=0, continuar esperando, si S1=1, seguir
+		LDX #MED_MSG3 ;Imprimir mensaje de midiendo, espere
+		LDY #MED_MSG4
+		JSR CARG_LCD
+		BSET CRGINT,$80 ;Habilitar interrupción RTI
+MED_DIST:	BRCLR BANDERAS,$08,MED_DIST ;Mientras DIST no sea 1, continuar esperando
+		LDX #MED_MSG5 ;Imprimir mensaje de longitud
+		BRCLR BANDERAS,$20,MED_NXT1 ;Si Largo=1, imprimir mensaje de "excesiva"
+		LDY #MED_MSG6
+		BRA MED_CONT	
+MED_NXT1:	BRCLR BANDERAS,$10,MED_NXT2 ;Si Corto=1, imprimir mensaje de "deficiente"
+		LDY #MED_MSG7
+		BRA MED_CONT	
+MED_NXT2:	LDY #MED_MSG8 ;Si Corto=Largo=0, imprimir mensaje de "en ámbito"
+MED_CONT:	JSR CARG_LCD
+MED_DIST2:	BRSET BANDERAS,$08,MED_DIST2	
+		BCLR CRGINT,$80 ;Deshabilitar RTI
+		BCLR BANDERAS,$02 ;Bajar bandera de S1
+		RTS 
  
 ;******************************************************
 ;		Subrutina config
@@ -227,11 +255,11 @@ END_CONFIG:	BCLR CRGINT,$80
 ;******************************************************
 STOP:		LDAA LEDS
 		CMPA #$04
-		BEQ STOP_CONT
-		MOVB #$04,LEDS
-		MOVB #$FF,BCD1
+		BEQ STOP_CONT ;Si ya se tiene impreso en la pantalla el mensaje de "Medidor 623", no imprimir nada y salir
+		MOVB #$04,LEDS ;Colocar LED de modo STOP
+		MOVB #$FF,BCD1 ;Apagar pantallas de 7 segmentos
 		MOVB #$FF,BCD2
-		LDX #STOP_MSG1
+		LDX #STOP_MSG1 ;Imprimir mensaje de STOP
 		LDY #STOP_MSG2
 		JSR CARG_LCD
 STOP_CONT:	RTS 
@@ -391,6 +419,19 @@ CALCULAR:	LDD #5000 ;Se carga en D 5m x (1mS)^-1
 		RTS 
 
 ;******************************************************
+            ;SURUTINA DE INTERRUPCIÓN PTH
+;******************************************************
+PTH_ISR:	BRCLR PIFH,$01,PTH3 ;Si no se está presionando PTH0, se presionó PTH3
+		BRSET BANDERAS,$02,PTH_S0
+		BSET BANDERAS,$02
+		BRA PTH_OUT
+PTH_S0:		BCLR BANDERAS,$02
+		BRA PTH_OUT
+PTH3:		BSET BANDERAS,$04
+PTH_OUT:	RTI 
+
+
+;******************************************************
 ;           SUBRUTINA DE INTERRUPCIÓN RTI
 ;******************************************************
 RTI_ISR:	TST REB
@@ -455,8 +496,8 @@ OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
 		ADDD #1
 		CPD #500     ;Si este ya contó 100mS, refrescar valores
 		BNE NOT_RFRSH ;Si no, continuar
-		LDAA POT
-		LDAB #100
+		LDAA POT ;Cargar variable POT
+		LDAB #100 ;Obtener el valor en una escala de 0 a 100 haciendo BRILLO = (100/255) x POT
 		MUL 
 		LDX #255
 		IDIV 
