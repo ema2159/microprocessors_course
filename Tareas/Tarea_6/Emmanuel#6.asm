@@ -140,15 +140,15 @@ CALC_OUT:	RTS
 ;	      INTERRUPCION RTI
 ;***************************************************
 RTI_ISR:	TST CONT_RTI
-		BNE DEC_RTI
-		JSR CALCULO
-		BRCLR BANDERAS,$02,RTI_NXT1
-		BCLR PORTE,$04
+		BNE DEC_RTI ;Si no ha terminado el intervalo de un segundo, proceder a descontar y salir
+		JSR CALCULO ;Obtener volumen en formato ASCII y levantar banderas necesarias
+		BRCLR BANDERAS,$02,RTI_NXT1 ;Si la bandera de tanque lleno está levantada, abrir relé
+		BCLR PORTE,$04 
 		BRA RTI_NXT1
-RTI_NXT1:	BRCLR BANDERAS,$04,RTI_NXT2
+RTI_NXT1:	BRCLR BANDERAS,$04,RTI_NXT2 ;Si la bandera de tanque vacío está levantada, cerrar relé
 		BSET PORTE,$04
-RTI_NXT2:	MOVB #$48,SC1CR2
-		MOVB #8,CONT_RTI
+RTI_NXT2:	MOVB #$48,SC1CR2 ;Habilitar interfaz SCI
+		MOVB #8,CONT_RTI ;Guardar contador para duración de 1 segundo
 		BRA SALTO 
 DEC_RTI:	DEC CONT_RTI 
 SALTO:		BSET CRGFLG,$80
@@ -171,7 +171,7 @@ CLEAR_MSG1:	MOVB #$00,SC1CR2 ;Apagar interfaz
 		BSET BANDERAS,$01
 		CLR OFFSET
 		LBRA SCI_OUT
-SCI_NXT1:	BRSET BANDERAS,$08,SCI_NXT2
+SCI_NXT1:	BRSET BANDERAS,$08,SCI_NXT2 ;Si la bandera de impresión de mensaje inferior está levantada, proceder a imprimir mensaje según banderas
 		LDAA SC1SR1 
 		LDX #VOL_MSG ;Cargar mensaje de volumen
 		LDAB OFFSET
@@ -185,7 +185,7 @@ CLEAR_MSG2:	MOVB #$00,SC1CR2 ;Apagar interfaz
 		BSET BANDERAS,$08
 		CLR OFFSET
 		BRA SCI_OUT
-SCI_NXT2:	BRCLR BANDERAS,$02,SCI_NXT3
+SCI_NXT2:	BRCLR BANDERAS,$02,SCI_NXT3 ;Si bandera de tanque lleno levantada, imprimir mensaje de tanque lleno, sino, seguir
 		LDAA SC1SR1 
 		LDX #LLENO_MSG ;Cargar mensaje de volumen
 		LDAB OFFSET
@@ -198,7 +198,7 @@ SCI_NXT2:	BRCLR BANDERAS,$02,SCI_NXT3
 CLEAR_MSG3:	BCLR BANDERAS,$08
 		CLR OFFSET
 		BRA SCI_OUT
-SCI_NXT3:	BRCLR BANDERAS,$04,SCI_NXT4
+SCI_NXT3:	BRCLR BANDERAS,$04,SCI_NXT4 ;Si bandera de tanque vacío levantada, imprimir mensaje de tanque vacío, sino, seguir
 		LDAA SC1SR1 
 		LDX #VACIO_MSG ;Cargar mensaje de volumen
 		LDAB OFFSET
@@ -208,10 +208,10 @@ SCI_NXT3:	BRCLR BANDERAS,$04,SCI_NXT4
 		STAA SC1DRL
 		INC OFFSET
 		BRA SCI_OUT
-CLEAR_MSG4:	BCLR BANDERAS,$08
+CLEAR_MSG4:	BCLR BANDERAS,$08 
 		CLR OFFSET
 		BRA SCI_OUT
-SCI_NXT4:	LDAA SC1SR1 
+SCI_NXT4:	LDAA SC1SR1 ;Si ninguna bandera está levantada, limpiar mensaje inferior 
 		LDX #NORMAL_MSG ;Cargar mensaje de volumen
 		LDAB OFFSET
 		LDAA B,X ;Imprimir caracter a caracter el mensaje de alarma de tanque vacío
@@ -223,7 +223,6 @@ SCI_NXT4:	LDAA SC1SR1
 CLEAR_MSG5:	BCLR BANDERAS,$08
 		CLR OFFSET
 		BRA SCI_OUT
-
 SCI_OUT:	RTI		
 ;************************************************************************
                       ;Subrutina ATD0_ISR
