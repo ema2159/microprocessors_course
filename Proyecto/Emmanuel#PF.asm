@@ -61,6 +61,8 @@ CONT_DIG:   	DS 1
 CONT_TICKS: 	DS 1
 DT:         	DS 1
 CONT_RTI:	DS 1
+REB2:		DS 1
+CONT_REB:	DS 1
 BCD1:       	DS 1
 BCD2:       	DS 1
 DIG1:       	DS 1
@@ -142,6 +144,7 @@ AD_CONF:	DBNE A,AD_CONF
 		LDS #$3BFF
 		;Inicializar las variables
 		MOVB #$01,BAND_TEC  
+		CLR BANDERAS
 		MOVB #01,LEDS
 		MOVB #0,PORTB
 		CLR Lmin
@@ -153,11 +156,12 @@ AD_CONF:	DBNE A,AD_CONF
 		STD TC4
 		MOVB #100,CONT_TICKS
 		MOVB #1,CONT_DIG
-		;Programa principal
+		;Programa principal, declaración de variables iniciales
 		MOVB #$00,LEDS
 		JSR INIT_DSPL
 		MOVB #10,REB
 		MOVB #$00,BAND_TEC
+		MOVB #300,CONT_REB
 		MOVB #$FF,TMP1 ;Se colocan las variables temporales en $FF
 		MOVB #$FF,TMP2 ;para indicar que se encuentran vacías 
 		CLR VALOR
@@ -421,14 +425,21 @@ CALCULAR:	LDD #5000 ;Se carga en D 5m x (1mS)^-1
 ;******************************************************
             ;SURUTINA DE INTERRUPCIÓN PTH
 ;******************************************************
-PTH_ISR:	BRCLR PIFH,$01,PTH3 ;Si no se está presionando PTH0, se presionó PTH3
+PTH_ISR:	TST REB2 ;Si rebotes es distinto de cero, decrementar hasta que lo sea
+		BNE PTH_OUT
+		BRCLR PIFH,$01,PTH3 ;Si no se está presionando PTH0, se presionó PTH3
 		BRSET BANDERAS,$02,PTH_S0
 		BSET BANDERAS,$02
+		MOVB #50,REB2 ;Decrementar variable de rebotes
 		BRA PTH_OUT
 PTH_S0:		BCLR BANDERAS,$02
+		MOVB #50,REB2 ;Decrementar variable de rebotes
 		BRA PTH_OUT
 PTH3:		BSET BANDERAS,$04
-PTH_OUT:	RTI 
+		MOVB #50,REB2 ;Decrementar variable de rebotes
+		BRA PTH_OUT
+PTH_OUT:	BSET PIFH,$09
+		RTI 
 
 
 ;******************************************************
@@ -543,7 +554,13 @@ STORE_DIG:	STAA CONT_DIG
 OUT_OC:		LDAA CONT_DELAY
 		BEQ DELAY_ZERO
 		DEC CONT_DELAY ;Se decrementa CONT_DELAY siempre que no sea cero
-DELAY_ZERO:	LDD TCNT ;Ajustar el OC del canal 4
+DELAY_ZERO:	DEC CONT_REB ;Se decrementa el contador de rebotes 
+		BNE OC_OUT ;Se verifica si el contador de rebotes es cero
+		TST REB2 ;Se verifica si los rebotes de PTH son cero
+		BEQ REB2_NOT
+		DEC REB2 ;Si no lo son, decrementar
+REB2_NOT:	MOVB #150,CONT_REB ;Volver a cargar 50 en el contador de rebotes
+OC_OUT:		LDD TCNT ;Ajustar el OC del canal 4
 		ADDD #60
 		STD TC4
 		RTI 

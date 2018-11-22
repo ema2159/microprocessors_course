@@ -284,7 +284,7 @@ PTH3:		LDAA BRILLO ;Si brillo es 100, no se puede incrementar más, salir
 		INC BRILLO
 		BRA PTH_OUT	
 PTH_OUT:	
-		BSET PIFH,$07
+		BSET PIFH,$0D
 		RTI 
 
 

@@ -1,3 +1,11 @@
+;***************************************************
+;		Tarea #6
+;Autor: Emmanuel Bustos Torres
+;Descripción: Esta tarea consiste en la utilización 
+;de la interfaz de comunicación serial SCI y el con-
+;vertidor analógico digital, mediante los cuales se
+;simula un sistema de control de nivel para un tanque
+;***************************************************
 #include registers.inc
 ;***************************************************
 ;           DECLARACIÓN DE PARÁMETROS	
@@ -67,14 +75,15 @@ OFFSET:		DS 1
 		MOVB #$7F,RTICTL
 		BSET CRGINT,$80
 		;Configuración de interrupción SCI
-		MOVW #156,SC1BDH
+		MOVW #78,SC1BDH
+		MOVB #$12,SC1CR1
 		MOVB #$48,SC1CR2
 		;Configuración de interrupción de convertidor A/D
 		MOVB #$C2,ATD0CTL2
 		LDAA #200
 AD_CONF:	DBNE A,AD_CONF
-		MOVB #$20,ATD0CTL3
-		MOVB #$B7,ATD0CTL4
+		MOVB #$28,ATD0CTL3
+		MOVB #$93,ATD0CTL4
 		MOVB #$87,ATD0CTL5
 		;Configuración del relay
 		BSET DDRE,$04
@@ -182,7 +191,7 @@ SCI_NXT1:	BRSET BANDERAS,$08,SCI_NXT2 ;Si la bandera de impresión de mensaje in
 		INC OFFSET
 		BRA SCI_OUT
 CLEAR_MSG2:	MOVB #$00,SC1CR2 ;Apagar interfaz
-		BSET BANDERAS,$08
+		BSET BANDERAS,$08 ;Esta bandera se levanta para indicar que se debe imprimir el mensaje inferior
 		CLR OFFSET
 		BRA SCI_OUT
 SCI_NXT2:	BRCLR BANDERAS,$02,SCI_NXT3 ;Si bandera de tanque lleno levantada, imprimir mensaje de tanque lleno, sino, seguir
@@ -195,7 +204,7 @@ SCI_NXT2:	BRCLR BANDERAS,$02,SCI_NXT3 ;Si bandera de tanque lleno levantada, imp
 		STAA SC1DRL
 		INC OFFSET
 		BRA SCI_OUT
-CLEAR_MSG3:	BCLR BANDERAS,$08
+CLEAR_MSG3:	BCLR BANDERAS,$08 ;Limpiar bandera de mensaje inferior
 		CLR OFFSET
 		BRA SCI_OUT
 SCI_NXT3:	BRCLR BANDERAS,$04,SCI_NXT4 ;Si bandera de tanque vacío levantada, imprimir mensaje de tanque vacío, sino, seguir
@@ -208,31 +217,33 @@ SCI_NXT3:	BRCLR BANDERAS,$04,SCI_NXT4 ;Si bandera de tanque vacío levantada, im
 		STAA SC1DRL
 		INC OFFSET
 		BRA SCI_OUT
-CLEAR_MSG4:	BCLR BANDERAS,$08 
+CLEAR_MSG4:	BCLR BANDERAS,$08 ;Limpiar bandera de mensaje inferior
 		CLR OFFSET
 		BRA SCI_OUT
 SCI_NXT4:	LDAA SC1SR1 ;Si ninguna bandera está levantada, limpiar mensaje inferior 
 		LDX #NORMAL_MSG ;Cargar mensaje de volumen
 		LDAB OFFSET
-		LDAA B,X ;Imprimir caracter a caracter el mensaje de alarma de tanque vacío
+		LDAA B,X ;Imprimir una serie de espacios para borrar mensajes de alarma presentes en caso de haberlos
 		CMPA EOM
 		BEQ CLEAR_MSG5 
 		STAA SC1DRL
 		INC OFFSET
 		BRA SCI_OUT
-CLEAR_MSG5:	BCLR BANDERAS,$08
+CLEAR_MSG5:	BCLR BANDERAS,$08 ;Limpiar bandera de mensaje inferior
 		CLR OFFSET
 		BRA SCI_OUT
 SCI_OUT:	RTI		
 ;************************************************************************
                       ;Subrutina ATD0_ISR
 ;************************************************************************
-ATD0_ISR:	LDD ADR00H
+ATD0_ISR:	LDD ADR00H ;Sumar cinco mediciones
 		ADDD ADR01H			
 		ADDD ADR02H			
 		ADDD ADR03H			
-		LSRD 
-		LSRD 
-		STAB Nivel_PROM
-		MOVB #$87,ATD0CTL5
+		ADDD ADR04H 	
+		LDX #5 
+		IDIV  ;Obtener el promedio dividiendo entre 5
+		TFR X,B 
+		STAB Nivel_PROM ;Guardar el resultado en Nivel_PROM
+		MOVB #$87,ATD0CTL5 ;Volver a leer canal
 		RTI	
