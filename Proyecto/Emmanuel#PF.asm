@@ -114,7 +114,7 @@ MED_MSG8:	FCC "   En ambito    "
 		MOVB #$31,RTICTL
 		BCLR CRGINT,$80
 		;Configuración de interrupción de key wakepus
-		BCLR PIEH,$FF
+		BCLR PIEH,$09
 		BCLR PPSH,$09
 		;Configuracion de interrupción de convertidor A/D
 		MOVB #$C2,ATD0CTL2
@@ -212,7 +212,10 @@ MED_NXT2:	LDY #MED_MSG8 ;Si Corto=Largo=0, imprimir mensaje de "en ámbito"
 MED_CONT:	JSR CARG_LCD
 MED_DIST2:	BRSET BANDERAS,$08,MED_DIST2	
 		BCLR CRGINT,$80 ;Deshabilitar RTI
-		BCLR BANDERAS,$02 ;Bajar bandera de S1
+		BCLR PIEH,$09 ;Deshabilitar key wakeups 
+		BCLR BANDERAS,$32 ;Bajar banderas S1, Largo y Corto para la siguiente medición
+		MOVW #0,Ticks_VEL
+		MOVW #0,Ticks_LONG
 		RTS 
  
 ;******************************************************
@@ -428,10 +431,10 @@ CALCULAR:	LDD #5000 ;Se carga en D 5m x (1mS)^-1
 		TFR X,B ;Se transfiere el resultado a B
 		STAB LONG ;Se guarda el resultado en LONG
 		CMPB Lmin ;Se verifica si la longitud está en ámbito
-		BHI CALC_NXT1 
+		BHS CALC_NXT1 
 		BSET BANDERAS,$10 ;Si la longitud es menor a Lmin, poner la bandera de Corto en alto
 CALC_NXT1:	CMPB Lmax
-		BLO CALC_OUT
+		BLS CALC_OUT
 		BSET BANDERAS,$20 ;Si la longitud es mayor a Lmax, ponera la bandera de Largo en alto
 CALC_OUT:	JSR BIN_BCD
 		LDAA VELOC
