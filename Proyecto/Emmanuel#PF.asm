@@ -114,7 +114,7 @@ MED_MSG8:	FCC "   En ambito    "
 		MOVB #$31,RTICTL
 		BCLR CRGINT,$80
 		;Configuración de interrupción de key wakepus
-		BCLR PIEH,$09
+		MOVB #$00,PIEH
 		BCLR PPSH,$09
 		;Configuracion de interrupción de convertidor A/D
 		MOVB #$C2,ATD0CTL2
@@ -152,8 +152,8 @@ AD_CONF:	DBNE A,AD_CONF
 		CLR BANDERAS
 		MOVB #01,LEDS
 		MOVB #0,PORTB
-		CLR Lmin
-		CLR Lmax
+		MOVB #3,Lmin
+		MOVB #7,Lmax
 		MOVB #200,CONT_RTI ;Inicializar contador de interrupción RTI
 		MOVB #100,BRILLO ;Inicializar brillo
 		LDD TCNT
@@ -212,7 +212,7 @@ MED_NXT2:	LDY #MED_MSG8 ;Si Corto=Largo=0, imprimir mensaje de "en ámbito"
 MED_CONT:	JSR CARG_LCD
 MED_DIST2:	BRSET BANDERAS,$08,MED_DIST2	
 		BCLR CRGINT,$80 ;Deshabilitar RTI
-		BCLR PIEH,$09 ;Deshabilitar key wakeups 
+		MOVB #$00,PIEH ;Deshabilitar key wakeups 
 		BCLR BANDERAS,$32 ;Bajar banderas S1, Largo y Corto para la siguiente medición
 		MOVW #0,Ticks_VEL
 		MOVW #0,Ticks_LONG
@@ -440,9 +440,12 @@ CALC_OUT:	JSR BIN_BCD
 		LDAA VELOC
 		TFR A,X
 		LDAB LONG
+		LSRB ;LONG/2 para el centro longitudinal
 		LDAA #25
 		SBA ;Calcular la distancia que debe recorrer el tronco para que el roceador esté frente a su centro longitudinal
-		TFR A,D
+		BPL CALC_NXT2 ;Si el tronco es demasiado largo, su centro longitudinal ya pasó al roceador 
+		LDAA #0
+CALC_NXT2:	TFR A,D
 		IDIV ;Dividir entre la velocidad para calcular los segundos que tardará en alcanzar esa posición
 		TFR X,B
 		CLRA 
