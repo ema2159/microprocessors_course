@@ -80,6 +80,8 @@ VELOC:		DS 1
 LONG:		DS 1
 Ticks_VEL:	DS 2
 Ticks_LONG:	DS 2
+Ticks_DIST:	DS 2
+Ticks_ROC:	DS 2
 CONFIG_MSG1:	FCC " CONFIGURACION  "
 		DB EOM
 CONFIG_MSG2:	FCC "   Lmax:Lmin    "
@@ -98,11 +100,11 @@ MED_MSG4:	FCC "   Espere...    "
 		DB EOM
 MED_MSG5:	FCC "   Longitud     "
 		DB EOM
-MED_MSG6:	FCC "    Excesiva    "
+MED_MSG6:	FCC "   Excesiva     "
 		DB EOM
 MED_MSG7:	FCC "   Deficiente   "
 		DB EOM
-MED_MSG8:	FCC "   En ámbito    "
+MED_MSG8:	FCC "   En ambito    "
 		DB EOM
 ;******************************************************
 ;     Programa principal y configuración inicial
@@ -138,6 +140,9 @@ AD_CONF:	DBNE A,AD_CONF
 		MOVB #$F0,DDRA
 		;Habilitar resistencias de pullup
 		BSET PUCR,$01
+		;Configurar el relay
+		BSET DDRE,$04
+		BCLR PORTE,$04
 		;Habilitar instrucciones mascarables
 		CLI
 		;Configurar stack
@@ -165,8 +170,8 @@ AD_CONF:	DBNE A,AD_CONF
 		MOVB #$FF,TMP1 ;Se colocan las variables temporales en $FF
 		MOVB #$FF,TMP2 ;para indicar que se encuentran vacías 
 		CLR VALOR
-		MOVW #1000,Ticks_VEL
-		MOVW #2300,Ticks_LONG
+		MOVW #0,Ticks_VEL
+		MOVW #0,Ticks_LONG
 LOOP_FIN:	BRSET PTIH,$40,PH61 ;Se verifica el modo del medidor mediante los Dip switches
 		BRCLR PTIH,$80,M_STOP ;Si ambos switches PH6 y PH7 están en 0, se entra en modo stop
 		BRA M_CONFIG ;Si los switches son distintos entre sí, se entra en modo config
@@ -184,6 +189,8 @@ M_STOP:		JSR STOP
 ;******************************************************
 MEDICION:	BCLR BANDERAS,$01 ;La bandera C/M se coloca en 0
 		BSET PIEH,$09 ;Se habilita la interrupción PTIH_ISR para los pulsadores PH0 y PH3
+		MOVB #$FF,BCD1 ;Apagar pantallas de 7 segmentos
+		MOVB #$FF,BCD2
 		MOVB #$02,LEDS
 		LDX #MED_MSG1 ;Imprimir mensaje de esperando tronco
 		LDY #MED_MSG2
@@ -420,6 +427,26 @@ CALCULAR:	LDD #5000 ;Se carga en D 5m x (1mS)^-1
 		IDIV ;Se obtiene VELOC x (Ticks_LONG / 1000) que es igual a VELOC x (Ticks_LONG x 1mS)
 		TFR X,B ;Se transfiere el resultado a B
 		STAB LONG ;Se guarda el resultado en LONG
+		CMPB Lmin ;Se verifica si la longitud está en ámbito
+		BHI CALC_NXT1 
+		BSET BANDERAS,$10 ;Si la longitud es menor a Lmin, poner la bandera de Corto en alto
+CALC_NXT1:	CMPB Lmax
+		BLO CALC_OUT
+		BSET BANDERAS,$20 ;Si la longitud es mayor a Lmax, ponera la bandera de Largo en alto
+CALC_OUT:	JSR BIN_BCD
+		LDAA VELOC
+		TFR A,X
+		LDAB LONG
+		LDAA #25
+		SBA ;Calcular la distancia que debe recorrer el tronco para que el roceador esté frente a su centro longitudinal
+		TFR A,D
+		IDIV ;Dividir entre la velocidad para calcular los segundos que tardará en alcanzar esa posición
+		TFR X,B
+		CLRA 
+		LDY #1000 ;Calcular la cantidad de conteos RTI se requieren para cumplir con dicho tiempo
+		EMUL 
+		STD Ticks_DIST ;Guardar dicha cantidad para ser utilizada en la subrutina RTI_ISR
+		MOVW #500,Ticks_ROC ;Ticks_ROC debe ser 500 para que con un período RTI de 1mS el roceador dure activo 0.5s
 		RTS 
 
 ;******************************************************
@@ -445,7 +472,43 @@ PTH_OUT:	BSET PIFH,$09
 ;******************************************************
 ;           SUBRUTINA DE INTERRUPCIÓN RTI
 ;******************************************************
-RTI_ISR:	TST REB
+RTI_ISR:	BRSET BANDERAS,$01,RTI_TEC ;Si C/M = 1 ir a la sección de teclado
+		BRSET BANDERAS,$08, RTI_ROCE ;Si DIST = 1, ir a la sección de roceador
+		BRCLR BANDERAS,$02,RTI_NOLONG ;Si S1 = 1 incrementar Ticks_LONG, sino seguir
+		LDD Ticks_LONG
+		ADDD #1
+		STD Ticks_LONG
+RTI_NOLONG:	BRSET BANDERAS,$04,RTI_NOVEL ;Si S2 = 1 incrementar Ticks_VEL, sino seguir
+		LDD Ticks_VEL
+		ADDD #1
+		STD Ticks_VEL
+		LBRA RTI_RTRN	
+RTI_NOVEL:	BRSET BANDERAS,$02,S1_IS_1 ;Si S1 = 0 y S2 = 1, proceder a calcular lo necesario para rocear u omitir el tronco
+		BSET BANDERAS,$08 ;Levantar bandera de DIST
+		BCLR BANDERAS,$04 ;Bajar bandera de S2
+		JSR CALCULAR
+S1_IS_1:	LBRA RTI_RTRN
+RTI_ROCE:	TST Ticks_DIST ;Si Ticks_DIST = 0 proceder a rocear (u omitir) el tronco
+		BEQ RTI_AMBIT 
+		LDD Ticks_DIST ;Decrementar Ticks_DIST
+		SUBD #1
+		STD Ticks_DIST
+		LBRA RTI_RTRN
+RTI_AMBIT:	BRCLR BANDERAS,$10,RTI_CHKL ;Chequear bandera de Corto  
+		BRA RTI_NOAMB ;Si el tronco es demasiado Corto, salir y colocar DIST en 0
+RTI_CHKL:	BRCLR BANDERAS,$20,RTI_GOOD ;Chequear bandera de Largo
+RTI_NOAMB:	BCLR BANDERAS,$08 ;Si el tronco es demasiado largo, salir colocar DIST en 0 también 
+		LBRA RTI_RTRN
+RTI_GOOD:	BSET PORTE,$04 ;Si la longitud del tronco es la adecuada, activar el roceador una vez este esté frente al centro del tronco
+		TST Ticks_ROC ;Verificar si el roceador ya estuvo activo por 0.5s, sino seguir
+		BNE RTI_DECROC
+		BCLR PORTE,$04 ;Apagar roceador
+		BCLR BANDERAS,$08 ;DIST = 0
+RTI_DECROC:	LDD Ticks_ROC ;Decrementar Ticks_ROC
+		SUBD #1
+		STD Ticks_ROC
+		LBRA RTI_RTRN
+RTI_TEC:	TST REB
 		LBNE DEC_REB ;Verificar si ya se terminó el período de rebotes
 		MOVB #$FF,BUFFER
 		MOVB #0,PATRON 
@@ -470,8 +533,7 @@ ENC_TEC:	LSL PATRON
 		LSL PATRON
 		ADDB PATRON ;Obtener el índice indicado para obtener el valor correspondiente de la tabla
 		MOVB B,X BUFFER ;Acceder a la tabla por direccionamiento indexado por acumulador
-FIN_LEER: 
-		LDAA #$FF
+FIN_LEER: 	LDAA #$FF
 		CMPA BUFFER ;Ver si se presionó alguna tecla
 		BEQ TEC_NE ;Si no, saltar
 		BRSET BAND_TEC,$04,TEC_NE ;Si PRIMERA = 1, continuar 
@@ -497,6 +559,7 @@ IS_VALID:	LDAB BUFFER ;Verificar si la tecla fue liberada
 		BCLR BAND_TEC,$06 ;COLOCAR PRIMERA y VALID en 0
 		BRA RTI_RTRN
 DEC_REB:	DEC REB ;Decrementar rebotes
+		BRA RTI_RTRN
 RTI_RTRN:	BSET CRGFLG,$80 ;Levantar bandera de RTI
 		RTI 
 
