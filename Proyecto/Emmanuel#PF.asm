@@ -45,7 +45,7 @@ PATRON:		DS 1
 REB:		DS 1
 TECLA:		DS 1
 VALOR:		DS 1
-BAND_TEC:	DS 1   ;X:X:X:X:VALOR:PRIMERA:VALIDA:TECL_LISTA
+BAND_TEC:	DS 1   ;X:X:ON/OFF:BLINK:VALOR:PRIMERA:VALIDA:TECL_LISTA
 BANDERAS	DS 1   ;X:X:Largo:Corto:Dist:S2:S1:C/M
 BUFFER:		DS 1
 TMP1:		DS 1
@@ -82,9 +82,14 @@ Ticks_VEL:	DS 2
 Ticks_LONG:	DS 2
 Ticks_DIST:	DS 2
 Ticks_ROC:	DS 2
+CONT_BLINK:	DS 2
 CONFIG_MSG1:	FCC " CONFIGURACION  "
 		DB EOM
 CONFIG_MSG2:	FCC "   Lmax:Lmin    "
+		DB EOM
+CONFIG_MSG3:	FCC "   Lmax:        "
+		DB EOM
+CONFIG_MSG4:	FCC "       :Lmin    "
 		DB EOM
 STOP_MSG1:	FCC "    Medidor     "
 		DB EOM
@@ -161,6 +166,8 @@ AD_CONF:	DBNE A,AD_CONF
 		STD TC4
 		MOVB #100,CONT_TICKS
 		MOVB #1,CONT_DIG
+		MOVB #$FF,BCD1
+		MOVB #$FF,BCD2
 		;Programa principal, declaración de variables iniciales
 		MOVB #$00,LEDS
 		JSR INIT_DSPL
@@ -172,6 +179,7 @@ AD_CONF:	DBNE A,AD_CONF
 		CLR VALOR
 		MOVW #0,Ticks_VEL
 		MOVW #0,Ticks_LONG
+		MOVW #10000,CONT_BLINK
 LOOP_FIN:	BRSET PTIH,$40,PH61 ;Se verifica el modo del medidor mediante los Dip switches
 		BRCLR PTIH,$80,M_STOP ;Si ambos switches PH6 y PH7 están en 0, se entra en modo stop
 		BRA M_CONFIG ;Si los switches son distintos entre sí, se entra en modo config
@@ -221,47 +229,84 @@ MED_DIST2:	BRSET BANDERAS,$08,MED_DIST2
 ;******************************************************
 ;		Subrutina config
 ;******************************************************
-CONFIG:		BSET BANDERAS,$01
-		BSET CRGINT,$80
-		LDAA LEDS
-		CMPA #$01
-		BEQ CONFIG_CONT
+CONFIG:		BSET BANDERAS,$01 ;Colocar C/M en 1
+		BSET CRGINT,$80 ;Habilitar interrupción RTI
+		LDAA LEDS ;Verificar si se tiene el LED correspondiente al modo encendido
+		CMPA #$01 ;Si no, prender, si sí, seguir
+		BEQ CONFIG_CONT 
 		MOVB #$01,LEDS
-		CLR BCD1
-		CLR BCD2
-		JSR BCD_7SEG
-		LDX #CONFIG_MSG1
-		LDY #CONFIG_MSG2
-		JSR CARG_LCD
-CONFIG_CONT:	BRCLR BAND_TEC,$01,CONF_NOT_TEC
-		JSR TECLADO
-CONF_NOT_TEC:	BRCLR BAND_TEC,$08,END_CONFIG
-CONFIG_MIN:	BRCLR BAND_TEC,$01,CONF_NOT_TEC2
-		JSR TECLADO
-CONF_NOT_TEC2:	LDAA VALOR
-		CMPA #7
-		BHI CONFIG_MIN
-		CMPA #3
-		BLO CONFIG_MIN
-		STAA Lmin
+		LDAA Lmin
 		ORAA #$F0
+		STAA BCD1 ;Cargar el Lmin de default en BCD1
+		LDAA Lmax
+		ORAA #$F0
+		STAA BCD2 ;Cargar el Lmax de default en BCD2
+		LDX #CONFIG_MSG1 
+		LDY #CONFIG_MSG2
+		JSR CARG_LCD ;Imprimir mensajes
+CONFIG_CONT:	BRCLR BAND_TEC,$01,CONFIG_MIN
+		JSR TECLADO
+CONFIG_MIN:	BRCLR BAND_TEC,$10,CONF_NOTBLINK1 ;Si no se ha levantado bandera de parpadeo, no parpadear
+		BRSET BAND_TEC,$20,MIN_OFF ;Si bandera de ON/OFF está en 1, colocar mensaje completo
+		LDX #CONFIG_MSG1  
+		LDY #CONFIG_MSG3 ;Sino, quitar palabra Lmin y colocar BDC1 en FF para apagar el display
+		JSR CARG_LCD
+		MOVB #$FF,BCD1
+		BSET BAND_TEC,$20 ;Poner en alto bandera ON/OFF
+		BCLR BAND_TEC,$10 ;Bajar bandera de blink
+		BRA CONF_NOTBLINK1
+MIN_OFF:	LDX #CONFIG_MSG1
+		LDY #CONFIG_MSG2 ;Imprimir mensaje completo
+		JSR CARG_LCD
+		LDAA Lmin ;Colocar Lmin (apagando el cero a la izquierda) 
+		ORAA #$F0
+		STAA BCD1
+		BCLR BAND_TEC,$20 ;Poner en alto bandera ON/OFF
+		BCLR BAND_TEC,$10 ;Bajar bandera de blink
+CONF_NOTBLINK1:	BRSET BAND_TEC,$08,CONFIG_NX ;Si no hay ningún valor nuevo, saltar al final de la subrutina
+		LBRA END_CONFIG
+CONFIG_NX:	BRCLR BAND_TEC,$01,CONF_NOT_TEC2 ;Si hay tecla lista, llamar a subrutina teclado
+		JSR TECLADO 
+CONF_NOT_TEC2:	LDAA VALOR ;Cargar valor en A
+		CMPA #7 ;Verificar si es menor a 7
+		BHI CONFIG_MIN
+		CMPA #3 ;Verificar si es mayor a 3
+		BLO CONFIG_MIN ;Si no está en ámbito volver a chequear
+		STAA Lmin  ;Si si está en ámbito, guardar
+		ORAA #$F0 ;Imprimir estáticamente Lmin en el display correspondiente
 		STAA BCD1
 		JSR BCD_7SEG
 		CLR VALOR
-CONFIG_MAX:	BRCLR BAND_TEC,$01,CONF_NOT_TEC3
-		JSR TECLADO	
-CONF_NOT_TEC3:	LDAA VALOR
-		CMPA #7
-		BHI CONFIG_MAX
-		CMPA Lmin
-		BLO CONFIG_MAX
-		STAA Lmax
+CONFIG_MAX:	BRCLR BAND_TEC,$10,CONF_NOTBLINK2 ;Si no se ha levantado bandera de parpadeo, no parpadear
+		BRSET BAND_TEC,$20,MAX_OFF ;Si bandera de ON/OFF está en 1, colocar mensaje completo
+		LDX #CONFIG_MSG1 
+		LDY #CONFIG_MSG4 ;Sino, quitar palabra Lmax y colocar BDC2 en FF para apagar el display
+		JSR CARG_LCD ;Imprimir mensaje con Lmax encendido
+		MOVB #$FF,BCD2
+		BSET BAND_TEC,$20 ;Poner en alto bandera ON/OFF
+		BCLR BAND_TEC,$10 ;Bajar bandera de blink
+		BRA CONF_NOTBLINK2
+MAX_OFF:	LDX #CONFIG_MSG1
+		LDY #CONFIG_MSG2 ;Imprimir mensaje completo
+		JSR CARG_LCD ;Imprimir mensaje con Lmax apagado
+		LDAA Lmax ;Colocar Lmax (apagando el cero a la izquierda)
 		ORAA #$F0
 		STAA BCD2
-		JSR BCD_7SEG
-		CLR VALOR
-		BCLR BAND_TEC,$08
-END_CONFIG:	BCLR CRGINT,$80
+		BCLR BAND_TEC,$20 ;Poner en bajo bandera ON/OFF
+		BCLR BAND_TEC,$10 ;Bajar bandera de blink
+CONF_NOTBLINK2:	BRCLR BAND_TEC,$01,CONF_NOT_TEC3
+		JSR TECLADO	
+CONF_NOT_TEC3:	LDAA VALOR
+		CMPA #7 ;Verificar si es menor a 7
+		BHI CONFIG_MAX
+		CMPA Lmin ;Verificar si es mayor a 3
+		BLO CONFIG_MAX
+		STAA Lmax ;Si si está en ámbito, guardar
+		ORAA #$F0 ;Imprimir estáticamente Lmax en el display correspondiente
+		STAA BCD2
+		CLR VALOR ;Limpiar variable VALOR
+		BCLR BAND_TEC,$08 ;Limpiar bandera VALOR
+END_CONFIG:	BCLR CRGINT,$80 ;Apagar interrupción RTI
 		RTS 
 
 ;******************************************************
@@ -461,17 +506,17 @@ CALC_NXT2:	TFR A,D
 PTH_ISR:	TST REB2 ;Si rebotes es distinto de cero, decrementar hasta que lo sea
 		BNE PTH_OUT
 		BRCLR PIFH,$01,PTH3 ;Si no se está presionando PTH0, se presionó PTH3
-		BRSET BANDERAS,$02,PTH_S0
-		BSET BANDERAS,$02
+		BRSET BANDERAS,$02,PTH_S0 ;Si S0 = 1 saltar
+		BSET BANDERAS,$02 ;Colocar S0 en 1
 		MOVB #50,REB2 ;Decrementar variable de rebotes
 		BRA PTH_OUT
-PTH_S0:		BCLR BANDERAS,$02
+PTH_S0:		BCLR BANDERAS,$02 ;Colocar S0 en 0
 		MOVB #50,REB2 ;Decrementar variable de rebotes
 		BRA PTH_OUT
-PTH3:		BSET BANDERAS,$04
+PTH3:		BSET BANDERAS,$04 ;Colocar S1 en 1
 		MOVB #50,REB2 ;Decrementar variable de rebotes
 		BRA PTH_OUT
-PTH_OUT:	BSET PIFH,$09
+PTH_OUT:	BSET PIFH,$09 ;Levantar banderas para apagar interrupción
 		RTI 
 
 
@@ -582,10 +627,10 @@ OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
 		LDX #255
 		IDIV 
 		TFR X,A
-		STAA BRILLO
-		JSR BCD_7SEG
+		STAA BRILLO ;Guardar la variable de BRILLO escalada de 0 a 100
+		JSR BCD_7SEG ;Llamar a subrutina de BCD_7SEG
 		LDD #0
-NOT_RFRSH:	STD CONT_7SEG
+NOT_RFRSH:	STD CONT_7SEG 
 		LDAA #100 ;Cargar en a el valor de N para calcular DT
 		SUBA BRILLO ;Calcular DT = N-K
 		STAA DT 
@@ -624,11 +669,20 @@ OUT_OC:		LDAA CONT_DELAY
 		BEQ DELAY_ZERO
 		DEC CONT_DELAY ;Se decrementa CONT_DELAY siempre que no sea cero
 DELAY_ZERO:	DEC CONT_REB ;Se decrementa el contador de rebotes 
-		BNE OC_OUT ;Se verifica si el contador de rebotes es cero
+		BNE OC_BLINK ;Se verifica si el contador de rebotes es cero
 		TST REB2 ;Se verifica si los rebotes de PTH son cero
 		BEQ REB2_NOT
 		DEC REB2 ;Si no lo son, decrementar
 REB2_NOT:	MOVB #150,CONT_REB ;Volver a cargar 50 en el contador de rebotes
+OC_BLINK:	LDD CONT_BLINK
+		CPD #0
+		BEQ RESET_BLINK ;Si cont blink es distinto de cero, decrementar, sino, proceder a reiniciar y modificar banderas
+		LDD CONT_BLINK ;Decrementar contador de parpadeo (cont blink) 
+		SUBD #1
+		STD CONT_BLINK
+		BRA OC_OUT
+RESET_BLINK:	MOVW #20000,CONT_BLINK ;Configurar período de parpadeo en aproximadamente 0.4s
+		BSET BAND_TEC,$10 ;Levantar bandera de BLINK
 OC_OUT:		LDD TCNT ;Ajustar el OC del canal 4
 		ADDD #60
 		STD TC4
@@ -638,7 +692,7 @@ OC_OUT:		LDD TCNT ;Ajustar el OC del canal 4
             ;Subrutina Delay
 ;************************************************************************
 DELAY:		 TST CONT_DELAY	
-		 BNE DELAY
+		 BNE DELAY ;No salir de esta subrutina mientras DELAY no sea 0
 		 RTS 
 
 ;************************************************************************
@@ -738,12 +792,12 @@ OUT_CARG:	RTS
 ;************************************************************************
                       ;Subrutina ATD0_ISR
 ;************************************************************************
-ATD0_ISR:	LDD ADR00H
+ATD0_ISR:	LDD ADR00H ;Obtener y sumar 4 muestras del convertidor analógico digital
 		ADDD ADR01H			
 		ADDD ADR02H			
 		ADDD ADR03H			
 		LSRD 
-		LSRD 
-		STAB POT
-		MOVB #$87,ATD0CTL5
+		LSRD ;Obtener el promedio de dichas muestras dividientdo entre 4
+		STAB POT ;Guardar el valor calculado en la variable POT
+		MOVB #$87,ATD0CTL5 ;Volver a activar las conversiones en el canal 7
 		RTI	
