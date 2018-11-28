@@ -2,16 +2,16 @@
 ;***************************************************
 ;           DECLARACIÓN DE PARÁMETROS	
 ;***************************************************
-DIR_SEC 	EQU $00
+DIR_SEG 	EQU $00
 DIR_WR		EQU $D0
 DIR_RD		EQU $D1
-NP 		EQU $0C
-EOM 		EQU $00
 ;***************************************************
 ;	DEFINICIÓN DE VECTOR DE INTERRUPCIÓN
 ;***************************************************
-		ORG $3E54
-		DW SCI_ISR
+		ORG $3E40
+		DW IIC_ISR
+		ORG $3E70
+               DW RTI_ISR
 ;***************************************************
 ;       DEFINICIÓN DE MENSAJE Y VARIABLES	
 ;***************************************************
@@ -20,18 +20,34 @@ T_WRITE_RTC:	DB $00,$59,$09,$06,$23,$11,$18
 T_READ_RTC:	DS 7
 RW_RTC:		DS 1
 CONT_RTI:	DS 1
+INDEX_RTC:	DS 1
 ;***************************************************
 ;	      PROGRAMA PRINCIPAL
 ;***************************************************
 		ORG $2000
+		MOVB #$FF,DDRB
+		BSET DDRJ,$02
+		BCLR PTJ,$02
 		MOVB #$25,IBFD
 		MOVB #$F0,IBCR
 		LDS #$3BFF
 		CLI 
 		MOVB #0,RW_RTC
 		MOVB #7,INDEX_RTC
-		MOVB DIR_WR,IBDR
-		BRA *	
+		MOVB #DIR_WR,IBDR
+MAIN_LOOP:	TST RW_RTC
+		BEQ MAIN_LOOP
+		MOVB #$80,CRGINT
+		MOVB #$6B,RTICTL
+		MOVB #20,CONT_RTI
+MAIN_LOOP2:	BRCLR T_READ_RTC,$01,BLINKON
+		BCLR PORTB,$01	
+		BRA MAINOUT
+BLINKON:	BSET PORTB,$01
+MAINOUT:	BRA MAIN_LOOP2	
+
+
+
 
 IIC_ISR:	BSET IBSR,$02
 		TST RW_RTC
@@ -45,25 +61,54 @@ IIC_ISR:	BSET IBSR,$02
 		LDAA INDEX_RTC
 		MOVB A,X IBDR
 		INC INDEX_RTC
-		BRA OUT 
-DOSTUFF2:	MOVB DIR_SEG,IBDR
-		CLR INTEX_RTC
+		BRA OUT  
+DOSTUFF2:	MOVB #DIR_SEG,IBDR
+		CLR INDEX_RTC
 		BRA OUT
 DOSTUFF3:	BCLR IBCR,$20
 		MOVB #1,RW_RTC
-		MOVB ,INDEX_RTC
+		MOVB #7,INDEX_RTC
+		BRA OUT
+DOSTUFF:	LDAA INDEX_RTC
+		CMPA #7
+		BNE IIC_NXT1
+		MOVB #DIR_SEG,IBDR
+		BRA INC_INDEX
+IIC_NXT1:	CMPA #8
+		BNE IIC_NXT2
+		BSET IBCR,$04	
+		MOVB #DIR_RD,IBDR
+		BRA INC_INDEX
+IIC_NXT2:	CMPA #9
+		BNE IIC_NXT3
+		BCLR IBCR,$10
+		CLR INDEX_RTC
+		BCLR IBCR,$04
+		LDAA IBDR
+		BRA OUT
+IIC_NXT3:	LDX #T_READ_RTC
+		LDAA INDEX_RTC
+		CMPA #5
+		BLO IIC_NXT4
+		CMPA #6
+		BNE IIC_STUFF
+		MOVB IBDR A,X
+		BCLR IBCR,$08
+		BSET IBCR,$10
+		BCLR IBCR,$20
+		MOVB #7,INDEX_RTC
+		BRA OUT
+IIC_STUFF:	BSET IBCR,$08
+IIC_NXT4:	MOVB IBDR A,X
+INC_INDEX:	INC INDEX_RTC
 OUT:		RTI 	
 
 
-DOSTUFF:	LDAA INDEX_RTC
 		
-
-
-
 RTI_ISR:	DEC CONT_RTI
 		BNE RTI_OUT
 		BSET IBCR,$20
-		MOVB DIR_WR,IBDR
+		MOVB #DIR_WR,IBDR
 		MOVB #20,CONT_RTI
 RTI_OUT:	BSET CRGFLG,$80
 		RTI 
