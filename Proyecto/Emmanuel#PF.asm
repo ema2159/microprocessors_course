@@ -179,7 +179,7 @@ AD_CONF:	DBNE A,AD_CONF
 		CLR VALOR
 		MOVW #0,Ticks_VEL
 		MOVW #0,Ticks_LONG
-		MOVW #10000,CONT_BLINK
+		MOVW #10000,CONT_BLINK ;Se coloca dicho valor en el contador para lograr una frecuencia de parpadeo de 0,4s
 LOOP_FIN:	BRSET PTIH,$40,PH61 ;Se verifica el modo del medidor mediante los Dip switches
 		BRCLR PTIH,$80,M_STOP ;Si ambos switches PH6 y PH7 están en 0, se entra en modo stop
 		BRA M_CONFIG ;Si los switches son distintos entre sí, se entra en modo config
@@ -318,6 +318,7 @@ STOP:		LDAA LEDS
 		MOVB #$04,LEDS ;Colocar LED de modo STOP
 		MOVB #$FF,BCD1 ;Apagar pantallas de 7 segmentos
 		MOVB #$FF,BCD2
+		JSR BCD_7SEG
 		LDX #STOP_MSG1 ;Imprimir mensaje de STOP
 		LDY #STOP_MSG2
 		JSR CARG_LCD
