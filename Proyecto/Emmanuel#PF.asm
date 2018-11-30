@@ -114,7 +114,7 @@ MED_MSG8:	FCC "   En ambito    "
 ;******************************************************
 ;     Programa principal y configuración inicial
 ;******************************************************
-		ORG $1500
+		ORG $2000
 		;Configurar interrupción RTI
 		MOVB #$31,RTICTL
 		BCLR CRGINT,$80
@@ -196,6 +196,7 @@ M_STOP:		JSR STOP
 ;		Subrutina medicion
 ;******************************************************
 MEDICION:	BCLR BANDERAS,$01 ;La bandera C/M se coloca en 0
+		BSET PIFH,$0F
 		BSET PIEH,$09 ;Se habilita la interrupción PTIH_ISR para los pulsadores PH0 y PH3
 		MOVB #$FF,BCD1 ;Apagar pantallas de 7 segmentos
 		MOVB #$FF,BCD2
@@ -297,10 +298,10 @@ MAX_OFF:	LDX #CONFIG_MSG1
 CONF_NOTBLINK2:	BRCLR BAND_TEC,$01,CONF_NOT_TEC3
 		JSR TECLADO	
 CONF_NOT_TEC3:	LDAA VALOR
-		CMPA #7 ;Verificar si es menor a 7
+		CMPA #8 ;Verificar si es menor a 7
 		BHI CONFIG_MAX
 		CMPA Lmin ;Verificar si es mayor a 3
-		BLO CONFIG_MAX
+		BLS CONFIG_MAX
 		STAA Lmax ;Si si está en ámbito, guardar
 		ORAA #$F0 ;Imprimir estáticamente Lmax en el display correspondiente
 		STAA BCD2
@@ -487,16 +488,15 @@ CALC_OUT:	JSR BIN_BCD
 		TFR A,X
 		LDAB LONG
 		LSRB ;LONG/2 para el centro longitudinal
-		LDAA #25
-		SBA ;Calcular la distancia que debe recorrer el tronco para que el roceador esté frente a su centro longitudinal
+		LDAA #20
+		ABA ;Calcular la distancia que debe recorrer el tronco para que el roceador esté frente a su centro longitudinal
 		BPL CALC_NXT2 ;Si el tronco es demasiado largo, su centro longitudinal ya pasó al roceador 
 		LDAA #0
 CALC_NXT2:	TFR A,D
-		IDIV ;Dividir entre la velocidad para calcular los segundos que tardará en alcanzar esa posición
-		TFR X,B
-		CLRA 
 		LDY #1000 ;Calcular la cantidad de conteos RTI se requieren para cumplir con dicho tiempo
 		EMUL 
+		IDIV ;Dividir entre la velocidad para calcular los segundos que tardará en alcanzar esa posición
+		TFR X,D
 		STD Ticks_DIST ;Guardar dicha cantidad para ser utilizada en la subrutina RTI_ISR
 		MOVW #500,Ticks_ROC ;Ticks_ROC debe ser 500 para que con un período RTI de 1mS el roceador dure activo 0.5s
 		RTS 
@@ -506,7 +506,7 @@ CALC_NXT2:	TFR A,D
 ;******************************************************
 PTH_ISR:	TST REB2 ;Si rebotes es distinto de cero, decrementar hasta que lo sea
 		BNE PTH_OUT
-		BRCLR PIFH,$01,PTH3 ;Si no se está presionando PTH0, se presionó PTH3
+		BRCLR PIFH,$08,PTH0 ;Si no se está presionando PTH0, se presionó PTH3
 		BRSET BANDERAS,$02,PTH_S0 ;Si S0 = 1 saltar
 		BSET BANDERAS,$02 ;Colocar S0 en 1
 		MOVB #50,REB2 ;Decrementar variable de rebotes
@@ -514,7 +514,7 @@ PTH_ISR:	TST REB2 ;Si rebotes es distinto de cero, decrementar hasta que lo sea
 PTH_S0:		BCLR BANDERAS,$02 ;Colocar S0 en 0
 		MOVB #50,REB2 ;Decrementar variable de rebotes
 		BRA PTH_OUT
-PTH3:		BSET BANDERAS,$04 ;Colocar S1 en 1
+PTH0:		BSET BANDERAS,$04 ;Colocar S1 en 1
 		MOVB #50,REB2 ;Decrementar variable de rebotes
 		BRA PTH_OUT
 PTH_OUT:	BSET PIFH,$09 ;Levantar banderas para apagar interrupción
@@ -552,7 +552,7 @@ RTI_CHKL:	BRCLR BANDERAS,$20,RTI_GOOD ;Chequear bandera de Largo
 RTI_NOAMB:	BCLR BANDERAS,$08 ;Si el tronco es demasiado largo, salir colocar DIST en 0 también 
 		LBRA RTI_RTRN
 RTI_GOOD:	BSET PORTE,$04 ;Si la longitud del tronco es la adecuada, activar el roceador una vez este esté frente al centro del tronco
-		TST Ticks_ROC ;Verificar si el roceador ya estuvo activo por 0.5s, sino seguir
+		LDD Ticks_ROC ;Verificar si el roceador ya estuvo activo por 0.5s, sino seguir
 		BNE RTI_DECROC
 		BCLR PORTE,$04 ;Apagar roceador
 		BCLR BANDERAS,$08 ;DIST = 0
@@ -632,8 +632,8 @@ OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
 		JSR BCD_7SEG ;Llamar a subrutina de BCD_7SEG
 		LDD #0
 NOT_RFRSH:	STD CONT_7SEG 
-		LDAA #100 ;Cargar en a el valor de N para calcular DT
-		SUBA BRILLO ;Calcular DT = N-K
+		LDAA #0 ;Cargar en a el valor de N para calcular DT
+		ADDA BRILLO ;Calcular DT = N-K
 		STAA DT 
 		LDAA CONT_TICKS 
 		CMPA DT ;Si CONT_TICKS=DT, cumplido ciclo de trabajo, bajar señal
