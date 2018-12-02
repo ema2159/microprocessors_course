@@ -1,4 +1,4 @@
-;******************************************************
+;*********************************************************
 ;           UCR                 II-2018
 ;
 ;           PROYECTO FINAL: Medidor 623
@@ -6,12 +6,19 @@
 ;Autor: Emmanuel Bustos Torres
 ;Carné: B51296
 ;Curso: Microproccesadores IE-623
-;Descripción:
-;******************************************************
+;Descripción:Para este proyecto se implementó un medidor
+;de longitud y velocidad para un aserradero, el cual se
+;encarga de medir dichos parámetros mediante dos sensores
+;a troncos de diferentes longitudes verificando que estos
+;estén en un rango indicado por el usuario. Además, este
+;se encarga de controlar un rociador, el cual es activado
+;cuando el punto medio de un tronco en rango pasa frente
+;a él
+;*********************************************************
 #include registers.inc
 
 ;******************************************************
-;     Configuración de vectores de interrupción
+;     Configuración de vectores de interrupción:
 ;******************************************************
 		ORG $3E4C
 		DW PTH_ISR
@@ -51,7 +58,6 @@ BUFFER:		DS 1
 TMP1:		DS 1
 TMP2:		DS 1
 TMP3:		DS 1
-TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$00,$0E
 Lmax:   	DS 1
 Lmin:	  	DS 1
 LEDS:       	DS 1
@@ -69,8 +75,6 @@ DIG1:       	DS 1
 DIG2:       	DS 1
 DIG3:       	DS 1
 DIG4:       	DS 1
-INIDSP:         DB 4,FUNCTION_SET,FUNCTION_SET,ENTRY_MODE_SET,DISPLAY_ON
-SEGMENT:    	DB $3F,$06,$5B,$4F,$66,$6D,$7D,$07,$7F,$6F
 CONT_7SEG:  	DS 2
 CONT_DELAY: 	DS 1
 D2ms:       	DB 100
@@ -83,6 +87,13 @@ Ticks_LONG:	DS 2
 Ticks_DIST:	DS 2
 Ticks_ROC:	DS 2
 CONT_BLINK:	DS 2
+;******************************************************
+;            Declaración de tablas
+;******************************************************
+		ORG $1100
+TECLAS:		DB $01,$02,$03,$04,$05,$06,$07,$08,$0B,$09,$00,$0E
+INIDSP:         DB 4,FUNCTION_SET,FUNCTION_SET,ENTRY_MODE_SET,DISPLAY_ON
+SEGMENT:    	DB $3F,$06,$5B,$4F,$66,$6D,$7D,$07,$7F,$6F
 CONFIG_MSG1:	FCC " CONFIGURACION  "
 		DB EOM
 CONFIG_MSG2:	FCC "   Lmax:Lmin    "
@@ -111,8 +122,14 @@ MED_MSG7:	FCC "   Deficiente   "
 		DB EOM
 MED_MSG8:	FCC "   En ambito    "
 		DB EOM
+
 ;******************************************************
 ;     Programa principal y configuración inicial
+;En este bloque se configuran los distintos periféricos
+;y variables iniciales, así como las interrupciones. 
+;Además se contiene el lazo del programa principal en 
+;el que se chequea de manera constante el modo de opera
+;ción
 ;******************************************************
 		ORG $2000
 		;Configurar interrupción RTI
@@ -193,7 +210,237 @@ M_STOP:		JSR STOP
 
 
 ;******************************************************
-;		Subrutina medicion
+;            SURUTINA DE INTERRUPCIÓN PTH:
+;Esta subrutina atiende los eventos activados por los
+;sensores (en este caso simulados por dos pulsadores)
+;levantando o bajando las banderas respectivas según 
+;detecte actividad en los sensores, los cuales activan
+;la interrupción mediante flancos crecientes o decre-
+;cientes
+;******************************************************
+PTH_ISR:	TST REB2 ;Si rebotes es distinto de cero, decrementar hasta que lo sea
+		BNE PTH_OUT
+		BRCLR PIFH,$08,PTH0 ;Si no se está presionando PTH0, se presionó PTH3
+		BRSET BANDERAS,$02,PTH_S0 ;Si S0 = 1 saltar
+		BSET BANDERAS,$02 ;Colocar S0 en 1
+		BSET PPSH,$08
+		MOVB #50,REB2 ;Decrementar variable de rebotes
+		BRA PTH_OUT
+PTH_S0:		BCLR BANDERAS,$02 ;Colocar S0 en 0
+		BCLR PPSH,$08
+		MOVB #50,REB2 ;Decrementar variable de rebotes
+		BRA PTH_OUT
+PTH0:		BSET BANDERAS,$04 ;Colocar S1 en 1
+		MOVB #50,REB2 ;Decrementar variable de rebotes
+		BRA PTH_OUT
+PTH_OUT:	BSET PIFH,$09 ;Levantar banderas para apagar interrupción
+		RTI 
+
+
+;******************************************************
+;           SUBRUTINA DE INTERRUPCIÓN RTI:
+;En esta subrutina se realiza una gran cantidad de ta-
+;reas de temporización, como el manejo del teclado, el
+;incremento de contadores para la temporización de dis-
+;tancia y velocidad, así como el manejo del roceador,
+;el cual para este proyecto se simula con un relé
+;******************************************************
+RTI_ISR:	BRSET BANDERAS,$01,RTI_TEC ;Si C/M = 1 ir a la sección de teclado
+		BRSET BANDERAS,$08, RTI_ROCE ;Si DIST = 1, ir a la sección de roceador
+		BRCLR BANDERAS,$02,RTI_NOLONG ;Si S1 = 1 incrementar Ticks_LONG, sino seguir
+		LDD Ticks_LONG
+		ADDD #1
+		STD Ticks_LONG
+RTI_NOLONG:	BRSET BANDERAS,$04,RTI_NOVEL ;Si S2 = 1 incrementar Ticks_VEL, sino seguir
+		LDD Ticks_VEL
+		ADDD #1
+		STD Ticks_VEL
+		LBRA RTI_RTRN	
+RTI_NOVEL:	BRSET BANDERAS,$02,S1_IS_1 ;Si S1 = 0 y S2 = 1, proceder a calcular lo necesario para rocear u omitir el tronco
+		BSET BANDERAS,$08 ;Levantar bandera de DIST
+		BCLR BANDERAS,$04 ;Bajar bandera de S2
+		JSR CALCULAR
+S1_IS_1:	LBRA RTI_RTRN
+RTI_ROCE:	TST Ticks_DIST ;Si Ticks_DIST = 0 proceder a rocear (u omitir) el tronco
+		BEQ RTI_AMBIT 
+		LDD Ticks_DIST ;Decrementar Ticks_DIST
+		SUBD #1
+		STD Ticks_DIST
+		LBRA RTI_RTRN
+RTI_AMBIT:	BRCLR BANDERAS,$10,RTI_CHKL ;Chequear bandera de Corto  
+		BRA RTI_NOAMB ;Si el tronco es demasiado Corto, salir y colocar DIST en 0
+RTI_CHKL:	BRCLR BANDERAS,$20,RTI_GOOD ;Chequear bandera de Largo
+RTI_NOAMB:	BCLR BANDERAS,$08 ;Si el tronco es demasiado largo, salir colocar DIST en 0 también 
+		LBRA RTI_RTRN
+RTI_GOOD:	BSET PORTE,$04 ;Si la longitud del tronco es la adecuada, activar el roceador una vez este esté frente al centro del tronco
+		LDD Ticks_ROC ;Verificar si el roceador ya estuvo activo por 0.5s, sino seguir
+		BNE RTI_DECROC
+		BCLR PORTE,$04 ;Apagar roceador
+		BCLR BANDERAS,$08 ;DIST = 0
+RTI_DECROC:	LDD Ticks_ROC ;Decrementar Ticks_ROC
+		SUBD #1
+		STD Ticks_ROC
+		LBRA RTI_RTRN
+RTI_TEC:	TST REB
+		LBNE DEC_REB ;Verificar si ya se terminó el período de rebotes
+		MOVB #$FF,BUFFER
+		MOVB #0,PATRON 
+		LDAA #$EF ;Cargar en A el valor para chequear la primera fila del teclado
+		LDX #TECLAS ;Cargar la tabla de teclas
+LOOP_TEC:	LDAB PATRON
+		CMPB #3 ;Verificar si ya se revisaron las tres filas del teclado
+		BEQ FIN_LEER ;Si sí, ir a fin
+		STAA PORTA ;Escribir en los primeros 4 bits del puerto A el valor correspondiente (E,D,B,7) para chequear la fila correspondiente
+		LDAB #0
+		BRCLR PORTA,$01,ENC_TEC ;Ver si alguno de los botones en la fila correspondiente fue presionado
+		INCB 
+		BRCLR PORTA,$02,ENC_TEC
+		INCB 
+		BRCLR PORTA,$04,ENC_TEC
+		INCB 
+		BRCLR PORTA,$08,ENC_TEC
+		INC PATRON ;Pasar a chequear siguiente fila
+		ROLA 
+		BRA LOOP_TEC
+ENC_TEC:	LSL PATRON 
+		LSL PATRON
+		ADDB PATRON ;Obtener el índice indicado para obtener el valor correspondiente de la tabla
+		MOVB B,X BUFFER ;Acceder a la tabla por direccionamiento indexado por acumulador
+FIN_LEER: 	LDAA #$FF
+		CMPA BUFFER ;Ver si se presionó alguna tecla
+		BEQ TEC_NE ;Si no, saltar
+		BRSET BAND_TEC,$04,TEC_NE ;Si PRIMERA = 1, continuar 
+		BSET BAND_TEC,$04 ;Si no, colocar PRIMERA en 1
+		MOVB #10,REB ;Activar rebotes
+		MOVB BUFFER,TECLA ;Mover BUFFER a TECLA
+		BRA RTI_RTRN ;Salir de la subrutina
+TEC_NE:		LDAA TECLA ;Verificar si TECLA es $FF
+		CMPA #$FF
+		BEQ RTI_RTRN ;Si sí, salir
+		BRSET BAND_TEC,$02,IS_VALID ;Si TECLA es válida, proceder a guardar
+		CMPA BUFFER ;Verificar si TECLA es igual a BUFFER después de la supresión de rebotes
+		BEQ TEC_BUFF ;Si sí, proceder
+		MOVB #$FF,TECLA ;Si no, colocar TECLA en $FF y poner PRIMERA en 0
+		BCLR BAND_TEC,$04
+		BRA RTI_RTRN
+TEC_BUFF:	BSET BAND_TEC,$02 ;Si TECLA y BUFFER son iguales, activar VALID
+		BRA RTI_RTRN
+IS_VALID:	LDAB BUFFER ;Verificar si la tecla fue liberada
+		CMPB #$FF ;Si no, salir
+		BNE RTI_RTRN 
+		BSET BAND_TEC,$01 ;Si sí, colocar TECL_LISTA en 1
+		BCLR BAND_TEC,$06 ;COLOCAR PRIMERA y VALID en 0
+		BRA RTI_RTRN
+DEC_REB:	DEC REB ;Decrementar rebotes
+		BRA RTI_RTRN
+RTI_RTRN:	BSET CRGFLG,$80 ;Levantar bandera de RTI
+		RTI 
+
+;************************************************************************
+;             Subrutina de atención a interrupción OC4:
+;Esta subrutina de manera similar a la subrutina RTI se encarga de realizar
+;distintas tareas de temporización, como el manejo del brillo de los display
+;así como la multiplexación de estos, el manejo del contador de parpadeo
+;en el modo de configuración y el control de rebotes de los pulsadores.
+;************************************************************************
+OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
+		ADDD #1
+		CPD #500     ;Si este ya contó 100mS, refrescar valores
+		BNE NOT_RFRSH ;Si no, continuar
+		LDAA POT ;Cargar variable POT
+		LDAB #100 ;Obtener el valor en una escala de 0 a 100 haciendo BRILLO = (100/255) x POT
+		MUL 
+		LDX #255
+		IDIV 
+		TFR X,A
+		STAA BRILLO ;Guardar la variable de BRILLO escalada de 0 a 100
+		JSR BCD_7SEG ;Llamar a subrutina de BCD_7SEG
+		LDD #0
+NOT_RFRSH:	STD CONT_7SEG 
+		LDAA #0 ;Cargar en a el valor de N para calcular DT
+		ADDA BRILLO ;Calcular DT = N-K
+		STAA DT 
+		LDAA CONT_TICKS 
+		CMPA DT ;Si CONT_TICKS=DT, cumplido ciclo de trabajo, bajar señal
+		BHI OC_BRIGHT
+		MOVB #00,PORTB
+OC_BRIGHT:	DEC CONT_TICKS ;Si CONT_TICKS=0, pasar a siguiente display
+		BNE OUT_OC 
+		MOVB #100,CONT_TICKS  
+		BSET PTJ,$02  ;Apagar LEDS
+		BRCLR CONT_DIG,$01,OC_NEXT1 ;Si bit 1 de CONT_DIG encendido encender display 1
+		MOVB #$F7,PTP
+		MOVB DIG3,PORTB
+OC_NEXT1:	BRCLR CONT_DIG,$02,OC_NEXT2 ;Si bit 2 de CONT_DIG encendido encender display 2
+		MOVB #$FB,PTP
+		MOVB DIG4,PORTB
+OC_NEXT2:	BRCLR CONT_DIG,$04,OC_NEXT3 ;Si bit 3 de CONT_DIG encendido encender display 3
+		MOVB #$FD,PTP
+		MOVB DIG1,PORTB
+OC_NEXT3:	BRCLR CONT_DIG,$08,OC_NEXT4 ;Si bit 4 de CONT_DIG encendido encender display 4
+		MOVB #$FE,PTP
+		MOVB DIG2,PORTB
+OC_NEXT4:	BRCLR CONT_DIG,$10,CHG_DIG ;Si bit 5 de CONT_DIG encendido encender LEDs
+		MOVB #$FF,PTP
+		BCLR PTJ,$02
+		MOVB LEDS,PORTB
+CHG_DIG:	LDAA CONT_DIG 
+		CMPA #$10   ;Si se está en LEDs (00010000) pasar a display 1 (00000001)
+		BLO SHIFT_DIG
+		LDAA #$01
+		BRA STORE_DIG
+SHIFT_DIG:	LSLA ;Se desplaza CONT_DIG para ir cambiando de display (00000001 = display 1, 00000010 = display 2...)
+STORE_DIG:	STAA CONT_DIG
+OUT_OC:		LDAA CONT_DELAY
+		BEQ DELAY_ZERO
+		DEC CONT_DELAY ;Se decrementa CONT_DELAY siempre que no sea cero
+DELAY_ZERO:	DEC CONT_REB ;Se decrementa el contador de rebotes 
+		BNE OC_BLINK ;Se verifica si el contador de rebotes es cero
+		TST REB2 ;Se verifica si los rebotes de PTH son cero
+		BEQ REB2_NOT
+		DEC REB2 ;Si no lo son, decrementar
+REB2_NOT:	MOVB #150,CONT_REB ;Volver a cargar 50 en el contador de rebotes
+OC_BLINK:	LDD CONT_BLINK
+		CPD #0
+		BEQ RESET_BLINK ;Si cont blink es distinto de cero, decrementar, sino, proceder a reiniciar y modificar banderas
+		LDD CONT_BLINK ;Decrementar contador de parpadeo (cont blink) 
+		SUBD #1
+		STD CONT_BLINK
+		BRA OC_OUT
+RESET_BLINK:	MOVW #20000,CONT_BLINK ;Configurar período de parpadeo en aproximadamente 0.4s
+		BSET BAND_TEC,$10 ;Levantar bandera de BLINK
+OC_OUT:		LDD TCNT ;Ajustar el OC del canal 4
+		ADDD #60
+		STD TC4
+		RTI 
+
+
+;************************************************************************
+;                      Subrutina ATD0_ISR:
+;Esta subrutina se encarga de manejar los datos brindados por el converti-
+;dor analógico digital, el cual recibe del potenciómetro una señal analógica
+;y realiza una conversión digital a 8 bits, guardando el resultado en una
+;variable POT
+;************************************************************************
+ATD0_ISR:	LDD ADR00H ;Obtener y sumar 4 muestras del convertidor analógico digital
+		ADDD ADR01H			
+		ADDD ADR02H			
+		ADDD ADR03H			
+		LSRD 
+		LSRD ;Obtener el promedio de dichas muestras dividientdo entre 4
+		STAB POT ;Guardar el valor calculado en la variable POT
+		MOVB #$87,ATD0CTL5 ;Volver a activar las conversiones en el canal 7
+		RTI	
+
+
+;******************************************************
+;		Subrutina medicion:
+;En este bloque se encuentra el modo medición medición,
+;en el cual se mide tanto la velocidad como la longitud
+;del tronco entrante, así como el tiempo necesario para
+;que el tronco respectivo pase frente al roceador. Esto
+;lo logra hacuendo uso de diversas otras subrutinas de 
+;apoyo que serán descritas más adelante.
 ;******************************************************
 MEDICION:	BCLR BANDERAS,$01 ;La bandera C/M se coloca en 0
 		BSET PIFH,$0F
@@ -228,7 +475,11 @@ MED_DIST2:	BRSET BANDERAS,$08,MED_DIST2
 		RTS 
  
 ;******************************************************
-;		Subrutina config
+;		Subrutina config:
+;En este bloque se encuentra el modo config, en el cual
+;el usuario puede hacer uso del teclado matricial para
+;modificar las longitudes máximas y mínimas deseadas
+;para los troncos que se desea que sean rociados
 ;******************************************************
 CONFIG:		BSET BANDERAS,$01 ;Colocar C/M en 1
 		BSET CRGINT,$80 ;Habilitar interrupción RTI
@@ -311,7 +562,10 @@ END_CONFIG:	BCLR CRGINT,$80 ;Apagar interrupción RTI
 		RTS 
 
 ;******************************************************
-;		Subrutina stop
+;		Subrutina stop:
+;En este bloque se encuentra el modo stop, modo en el 
+;que el medidor está inactivo y únicamente se presenta
+;una pantalla de bienvenida
 ;******************************************************
 STOP:		LDAA LEDS
 		CMPA #$04
@@ -332,6 +586,21 @@ STOP_CONT:	RTS
 ;en variables temporales hasta que el usuario  presione
 ;la tecla ENTER, o decida  borrar la tecla que presionó
 ;haciendo uso de la tecla BORRAR.
+;A continuación se muestra un diagrama ilustrativo del
+;teclado utilizado:
+;                     -----------------                                                     
+;                     |   |   |   |   |                                                     
+;                     | 1 | 2 | 3 | 4 |                                                     
+;           PA4($EF)--------------------                                         
+;                     |   |   |   |   |                                           
+;                     | 5 | 6 | 7 | 8 |                                           
+;           PA5($DF)--------------------                                           
+;                     |   |   |   |   |                                           
+;                     | B | 9 | 0 | E |                                           
+;           PA6($7F)--------------------                                           
+;                       |   |   |   |
+;                      PA0 PA1 PA2 PA3
+;               BRCLR: $01 $02 $04 $08
 ;******************************************************
 TECLADO:	LDAA TECLA ;Se carga la tecla obtenida en la subrutina RTI
 		LDAB TMP1  ;Se carga TMP1
@@ -462,7 +731,10 @@ OUT_7SEG:	RTS
 
 
 ;******************************************************
-;		Subrutina CALCULAR
+;		Subrutina CALCULAR:
+;Esta subrutina se encarga de realizar los distintos 
+;cálculos de distancia, velocidad y tiempos a partir de
+;la información brindada por los sensores
 ;******************************************************
 CALCULAR:	LDD #5000 ;Se carga en D 5m x (1mS)^-1
 		LDX Ticks_VEL 
@@ -501,203 +773,20 @@ CALC_NXT2:	TFR A,D
 		MOVW #500,Ticks_ROC ;Ticks_ROC debe ser 500 para que con un período RTI de 1mS el roceador dure activo 0.5s
 		RTS 
 
-;******************************************************
-            ;SURUTINA DE INTERRUPCIÓN PTH
-;******************************************************
-PTH_ISR:	TST REB2 ;Si rebotes es distinto de cero, decrementar hasta que lo sea
-		BNE PTH_OUT
-		BRCLR PIFH,$08,PTH0 ;Si no se está presionando PTH0, se presionó PTH3
-		BRSET BANDERAS,$02,PTH_S0 ;Si S0 = 1 saltar
-		BSET BANDERAS,$02 ;Colocar S0 en 1
-		MOVB #50,REB2 ;Decrementar variable de rebotes
-		BRA PTH_OUT
-PTH_S0:		BCLR BANDERAS,$02 ;Colocar S0 en 0
-		MOVB #50,REB2 ;Decrementar variable de rebotes
-		BRA PTH_OUT
-PTH0:		BSET BANDERAS,$04 ;Colocar S1 en 1
-		MOVB #50,REB2 ;Decrementar variable de rebotes
-		BRA PTH_OUT
-PTH_OUT:	BSET PIFH,$09 ;Levantar banderas para apagar interrupción
-		RTI 
-
-
-;******************************************************
-;           SUBRUTINA DE INTERRUPCIÓN RTI
-;******************************************************
-RTI_ISR:	BRSET BANDERAS,$01,RTI_TEC ;Si C/M = 1 ir a la sección de teclado
-		BRSET BANDERAS,$08, RTI_ROCE ;Si DIST = 1, ir a la sección de roceador
-		BRCLR BANDERAS,$02,RTI_NOLONG ;Si S1 = 1 incrementar Ticks_LONG, sino seguir
-		LDD Ticks_LONG
-		ADDD #1
-		STD Ticks_LONG
-RTI_NOLONG:	BRSET BANDERAS,$04,RTI_NOVEL ;Si S2 = 1 incrementar Ticks_VEL, sino seguir
-		LDD Ticks_VEL
-		ADDD #1
-		STD Ticks_VEL
-		LBRA RTI_RTRN	
-RTI_NOVEL:	BRSET BANDERAS,$02,S1_IS_1 ;Si S1 = 0 y S2 = 1, proceder a calcular lo necesario para rocear u omitir el tronco
-		BSET BANDERAS,$08 ;Levantar bandera de DIST
-		BCLR BANDERAS,$04 ;Bajar bandera de S2
-		JSR CALCULAR
-S1_IS_1:	LBRA RTI_RTRN
-RTI_ROCE:	TST Ticks_DIST ;Si Ticks_DIST = 0 proceder a rocear (u omitir) el tronco
-		BEQ RTI_AMBIT 
-		LDD Ticks_DIST ;Decrementar Ticks_DIST
-		SUBD #1
-		STD Ticks_DIST
-		LBRA RTI_RTRN
-RTI_AMBIT:	BRCLR BANDERAS,$10,RTI_CHKL ;Chequear bandera de Corto  
-		BRA RTI_NOAMB ;Si el tronco es demasiado Corto, salir y colocar DIST en 0
-RTI_CHKL:	BRCLR BANDERAS,$20,RTI_GOOD ;Chequear bandera de Largo
-RTI_NOAMB:	BCLR BANDERAS,$08 ;Si el tronco es demasiado largo, salir colocar DIST en 0 también 
-		LBRA RTI_RTRN
-RTI_GOOD:	BSET PORTE,$04 ;Si la longitud del tronco es la adecuada, activar el roceador una vez este esté frente al centro del tronco
-		LDD Ticks_ROC ;Verificar si el roceador ya estuvo activo por 0.5s, sino seguir
-		BNE RTI_DECROC
-		BCLR PORTE,$04 ;Apagar roceador
-		BCLR BANDERAS,$08 ;DIST = 0
-RTI_DECROC:	LDD Ticks_ROC ;Decrementar Ticks_ROC
-		SUBD #1
-		STD Ticks_ROC
-		LBRA RTI_RTRN
-RTI_TEC:	TST REB
-		LBNE DEC_REB ;Verificar si ya se terminó el período de rebotes
-		MOVB #$FF,BUFFER
-		MOVB #0,PATRON 
-		LDAA #$EF ;Cargar en A el valor para chequear la primera fila del teclado
-		LDX #TECLAS ;Cargar la tabla de teclas
-LOOP_TEC:	LDAB PATRON
-		CMPB #3 ;Verificar si ya se revisaron las tres filas del teclado
-		BEQ FIN_LEER ;Si sí, ir a fin
-		STAA PORTA ;Escribir en los primeros 4 bits del puerto A el valor correspondiente (E,D,B,7) para chequear la fila correspondiente
-		LDAB #0
-		BRCLR PORTA,$01,ENC_TEC ;Ver si alguno de los botones en la fila correspondiente fue presionado
-		INCB 
-		BRCLR PORTA,$02,ENC_TEC
-		INCB 
-		BRCLR PORTA,$04,ENC_TEC
-		INCB 
-		BRCLR PORTA,$08,ENC_TEC
-		INC PATRON ;Pasar a chequear siguiente fila
-		ROLA 
-		BRA LOOP_TEC
-ENC_TEC:	LSL PATRON 
-		LSL PATRON
-		ADDB PATRON ;Obtener el índice indicado para obtener el valor correspondiente de la tabla
-		MOVB B,X BUFFER ;Acceder a la tabla por direccionamiento indexado por acumulador
-FIN_LEER: 	LDAA #$FF
-		CMPA BUFFER ;Ver si se presionó alguna tecla
-		BEQ TEC_NE ;Si no, saltar
-		BRSET BAND_TEC,$04,TEC_NE ;Si PRIMERA = 1, continuar 
-		BSET BAND_TEC,$04 ;Si no, colocar PRIMERA en 1
-		MOVB #10,REB ;Activar rebotes
-		MOVB BUFFER,TECLA ;Mover BUFFER a TECLA
-		BRA RTI_RTRN ;Salir de la subrutina
-TEC_NE:		LDAA TECLA ;Verificar si TECLA es $FF
-		CMPA #$FF
-		BEQ RTI_RTRN ;Si sí, salir
-		BRSET BAND_TEC,$02,IS_VALID ;Si TECLA es válida, proceder a guardar
-		CMPA BUFFER ;Verificar si TECLA es igual a BUFFER después de la supresión de rebotes
-		BEQ TEC_BUFF ;Si sí, proceder
-		MOVB #$FF,TECLA ;Si no, colocar TECLA en $FF y poner PRIMERA en 0
-		BCLR BAND_TEC,$04
-		BRA RTI_RTRN
-TEC_BUFF:	BSET BAND_TEC,$02 ;Si TECLA y BUFFER son iguales, activar VALID
-		BRA RTI_RTRN
-IS_VALID:	LDAB BUFFER ;Verificar si la tecla fue liberada
-		CMPB #$FF ;Si no, salir
-		BNE RTI_RTRN 
-		BSET BAND_TEC,$01 ;Si sí, colocar TECL_LISTA en 1
-		BCLR BAND_TEC,$06 ;COLOCAR PRIMERA y VALID en 0
-		BRA RTI_RTRN
-DEC_REB:	DEC REB ;Decrementar rebotes
-		BRA RTI_RTRN
-RTI_RTRN:	BSET CRGFLG,$80 ;Levantar bandera de RTI
-		RTI 
 
 ;************************************************************************
-            ;Subrutina de atención a interrupción OC4
-;************************************************************************
-OC4_ISR:	LDD CONT_7SEG ;Cargar el contador de refrescamiento de 7SEG
-		ADDD #1
-		CPD #500     ;Si este ya contó 100mS, refrescar valores
-		BNE NOT_RFRSH ;Si no, continuar
-		LDAA POT ;Cargar variable POT
-		LDAB #100 ;Obtener el valor en una escala de 0 a 100 haciendo BRILLO = (100/255) x POT
-		MUL 
-		LDX #255
-		IDIV 
-		TFR X,A
-		STAA BRILLO ;Guardar la variable de BRILLO escalada de 0 a 100
-		JSR BCD_7SEG ;Llamar a subrutina de BCD_7SEG
-		LDD #0
-NOT_RFRSH:	STD CONT_7SEG 
-		LDAA #0 ;Cargar en a el valor de N para calcular DT
-		ADDA BRILLO ;Calcular DT = N-K
-		STAA DT 
-		LDAA CONT_TICKS 
-		CMPA DT ;Si CONT_TICKS=DT, cumplido ciclo de trabajo, bajar señal
-		BHI OC_BRIGHT
-		MOVB #00,PORTB
-OC_BRIGHT:	DEC CONT_TICKS ;Si CONT_TICKS=0, pasar a siguiente display
-		BNE OUT_OC 
-		MOVB #100,CONT_TICKS  
-		BSET PTJ,$02  ;Apagar LEDS
-		BRCLR CONT_DIG,$01,OC_NEXT1 ;Si bit 1 de CONT_DIG encendido encender display 1
-		MOVB #$F7,PTP
-		MOVB DIG3,PORTB
-OC_NEXT1:	BRCLR CONT_DIG,$02,OC_NEXT2 ;Si bit 2 de CONT_DIG encendido encender display 2
-		MOVB #$FB,PTP
-		MOVB DIG4,PORTB
-OC_NEXT2:	BRCLR CONT_DIG,$04,OC_NEXT3 ;Si bit 3 de CONT_DIG encendido encender display 3
-		MOVB #$FD,PTP
-		MOVB DIG1,PORTB
-OC_NEXT3:	BRCLR CONT_DIG,$08,OC_NEXT4 ;Si bit 4 de CONT_DIG encendido encender display 4
-		MOVB #$FE,PTP
-		MOVB DIG2,PORTB
-OC_NEXT4:	BRCLR CONT_DIG,$10,CHG_DIG ;Si bit 5 de CONT_DIG encendido encender LEDs
-		MOVB #$FF,PTP
-		BCLR PTJ,$02
-		MOVB LEDS,PORTB
-CHG_DIG:	LDAA CONT_DIG 
-		CMPA #$10   ;Si se está en LEDs (00010000) pasar a display 1 (00000001)
-		BLO SHIFT_DIG
-		LDAA #$01
-		BRA STORE_DIG
-SHIFT_DIG:	LSLA ;Se desplaza CONT_DIG para ir cambiando de display (00000001 = display 1, 00000010 = display 2...)
-STORE_DIG:	STAA CONT_DIG
-OUT_OC:		LDAA CONT_DELAY
-		BEQ DELAY_ZERO
-		DEC CONT_DELAY ;Se decrementa CONT_DELAY siempre que no sea cero
-DELAY_ZERO:	DEC CONT_REB ;Se decrementa el contador de rebotes 
-		BNE OC_BLINK ;Se verifica si el contador de rebotes es cero
-		TST REB2 ;Se verifica si los rebotes de PTH son cero
-		BEQ REB2_NOT
-		DEC REB2 ;Si no lo son, decrementar
-REB2_NOT:	MOVB #150,CONT_REB ;Volver a cargar 50 en el contador de rebotes
-OC_BLINK:	LDD CONT_BLINK
-		CPD #0
-		BEQ RESET_BLINK ;Si cont blink es distinto de cero, decrementar, sino, proceder a reiniciar y modificar banderas
-		LDD CONT_BLINK ;Decrementar contador de parpadeo (cont blink) 
-		SUBD #1
-		STD CONT_BLINK
-		BRA OC_OUT
-RESET_BLINK:	MOVW #20000,CONT_BLINK ;Configurar período de parpadeo en aproximadamente 0.4s
-		BSET BAND_TEC,$10 ;Levantar bandera de BLINK
-OC_OUT:		LDD TCNT ;Ajustar el OC del canal 4
-		ADDD #60
-		STD TC4
-		RTI 
-
-;************************************************************************
-            ;Subrutina Delay
+;                     Subrutina Delay:
+;Esta subrutina se encarga de detener la ejecución del programa hasta que
+;el contador de delay sea cero. Esta es utilizada para el manejo de la pan-
+;talla LCD
 ;************************************************************************
 DELAY:		 TST CONT_DELAY	
 		 BNE DELAY ;No salir de esta subrutina mientras DELAY no sea 0
 		 RTS 
 
 ;************************************************************************
-            ;Subrutina SEND_CMND
+;            Subrutina SEND_CMND:
+;Mediante esta subrutina se envían diversos comandos a la pantalla LCD
 ;************************************************************************
 SEND_CMND:	PSHA 
 		ANDA #$F0 ;Se deja solo el nibble superior del comando a ejecutar
@@ -721,7 +810,9 @@ SEND_CMND:	PSHA
 		RTS 
 
 ;************************************************************************
-            ;Subrutina SEND_DATA
+;                 Subrutina SEND_DATA:
+;Mediante esta subrutina se envían caracteres en formato ASCII al contro-
+;lador de la pantalla LCD
 ;************************************************************************
 SEND_DATA:	PSHA 
 		ANDA #$F0 ;Se deja solo el nibble superior del dato a enviar
@@ -747,7 +838,9 @@ SEND_DATA:	PSHA
 
 
 ;************************************************************************
-                      ;Subrutina INIT_DSPL
+;                      Subrutina INIT_DSPL:
+;Mediante esta subrutina se envían los distintos comandos de inicializa-
+;ción que requiere la pantalla LCD para empezar a desplegar datos
 ;************************************************************************
 INIT_DSPL:	LDX #INIDSP+1 ;Se carga en X la tabla que contiene los comandos de inicialización
 		LDAB #0 ;Se carga 0 en B
@@ -765,7 +858,11 @@ COMMANDS:	LDAA B,X ;Se accede a la tabla de comandos mediante direccionamiento i
 		RTS 
 
 ;************************************************************************
-                      ;Subrutina CARG_LCD
+;                      Subrutina CARG_LCD:
+;Esta subrutina se encarga de enviar dos tablas de caracteres a la pantalla
+;LCD para que estos sean desplegados. Dichas tablas son pasadas mediante 
+;los índices X y Y y son desplegaadas en la parte superior e inferior de 
+;la pantalla respectivamente
 ;************************************************************************
 CARG_LCD:	LDAA #DDRAM_ADDR1	;Se carga la dirección de la primera posición de la primera fila de la LCD
 		JSR SEND_CMND ;Se ejecuta el comando
@@ -788,17 +885,3 @@ CARG_3:		LDAA 1,Y+ ;Se carga cada caracter en A
 		JSR DELAY
 		BRA CARG_3
 OUT_CARG:	RTS 
-
-
-;************************************************************************
-                      ;Subrutina ATD0_ISR
-;************************************************************************
-ATD0_ISR:	LDD ADR00H ;Obtener y sumar 4 muestras del convertidor analógico digital
-		ADDD ADR01H			
-		ADDD ADR02H			
-		ADDD ADR03H			
-		LSRD 
-		LSRD ;Obtener el promedio de dichas muestras dividientdo entre 4
-		STAB POT ;Guardar el valor calculado en la variable POT
-		MOVB #$87,ATD0CTL5 ;Volver a activar las conversiones en el canal 7
-		RTI	
