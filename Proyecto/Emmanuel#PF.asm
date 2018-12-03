@@ -205,7 +205,7 @@ M_CONFIG:	JSR CONFIG
 		BRA LOOP_FIN
 M_MEDICION:	JSR MEDICION	
 		BRA LOOP_FIN
-M_STOP:		JSR STOP
+M_STOP:		JSR STOP_SR
 		BRA LOOP_FIN
 
 
@@ -224,14 +224,14 @@ PTH_ISR:	TST REB2 ;Si rebotes es distinto de cero, decrementar hasta que lo sea
 		BRSET BANDERAS,$02,PTH_S0 ;Si S0 = 1 saltar
 		BSET BANDERAS,$02 ;Colocar S0 en 1
 		BSET PPSH,$08
-		MOVB #50,REB2 ;Decrementar variable de rebotes
+		MOVB #30,REB2 ;Decrementar variable de rebotes
 		BRA PTH_OUT
 PTH_S0:		BCLR BANDERAS,$02 ;Colocar S0 en 0
 		BCLR PPSH,$08
-		MOVB #50,REB2 ;Decrementar variable de rebotes
+		MOVB #30,REB2 ;Decrementar variable de rebotes
 		BRA PTH_OUT
 PTH0:		BSET BANDERAS,$04 ;Colocar S1 en 1
-		MOVB #50,REB2 ;Decrementar variable de rebotes
+		MOVB #30,REB2 ;Decrementar variable de rebotes
 		BRA PTH_OUT
 PTH_OUT:	BSET PIFH,$09 ;Levantar banderas para apagar interrupción
 		RTI 
@@ -567,7 +567,7 @@ END_CONFIG:	BCLR CRGINT,$80 ;Apagar interrupción RTI
 ;que el medidor está inactivo y únicamente se presenta
 ;una pantalla de bienvenida
 ;******************************************************
-STOP:		LDAA LEDS
+STOP_SR:	LDAA LEDS
 		CMPA #$04
 		BEQ STOP_CONT ;Si ya se tiene impreso en la pantalla el mensaje de "Medidor 623", no imprimir nada y salir
 		MOVB #$04,LEDS ;Colocar LED de modo STOP
